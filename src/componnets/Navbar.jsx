@@ -5,16 +5,29 @@ export default function NavbarComponent() {
   return (
     <Navbar bg="light" expand="lg" className="shadow-sm" sticky="top">
       <Container>
-        <Navbar.Brand as={Link} to="/" className="fw-bold ">
-         ระบบเช่าพื้นที่ตลาด
+        <Navbar.Brand
+          as={Link}
+          to="/"
+          className="fw-bold d-flex align-items-center gap-2"
+        >
+          <img
+            src="https://upload.wikimedia.org/wikipedia/th/thumb/5/51/Logo_ku_th.svg/1200px-Logo_ku_th.svg.png"
+            alt="KU Logo"
+            style={{
+              width: "40px", // ขนาดรูป
+              height: "40px",
+              objectFit: "contain",
+            }}
+          />
+          ระบบเช่าพื้นที่ตลาดหอใน
         </Navbar.Brand>
 
         <Navbar.Toggle aria-controls="main-navbar" />
         <Navbar.Collapse id="main-navbar">
           <Nav className="me-auto">
             <Nav.Link as={Link} to="/">หน้าหลัก</Nav.Link>
-            <Nav.Link as={Link} to="/fromregister">เช่าพื้นที่</Nav.Link>
-            <Nav.Link as={Link} to="/about">เกี่ยวกับเรา</Nav.Link>
+            <Nav.Link as={Link} to="/home">เช่าพื้นที่</Nav.Link>
+            <Nav.Link as={Link} to="/rentalCheck">ตรวจสอบการเช่าพื้นที่</Nav.Link>
 
             <NavDropdown title="เพิ่มเติม" id="basic-nav-dropdown">
               <NavDropdown.Item as={Link} to="/contact">

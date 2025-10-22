@@ -66,3 +66,20 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+/* กว้าง/ยุบของ Sidebar */
+.sidebar { width: 260px; }
+.sidebar-collapsed { width: 0; overflow: hidden; }
+
+/* active state ของ NavLink (React Router จะเติม .active ให้อัตโนมัติ) */
+.nav-link.active {
+  background: #0d6efd10; /* ฟ้าอ่อนโปร่ง */
+  color: #0d6efd !important;
+  font-weight: 600;
+}
+
+/* ปรับให้ลิงก์ดูจับถนัดขึ้น */
+.nav-link { transition: background 0.15s ease; }
+.nav-link:hover { background: #00000005; }
+
+/* ให้ main กินพื้นที่ที่เหลือ และเลื่อน scroll ในฝั่ง main ได้ */
+main { min-height: 100vh; overflow: auto; }
