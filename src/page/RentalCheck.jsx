@@ -12,11 +12,11 @@ import {
   Table,
   Pagination,
 } from "react-bootstrap";
-import NavbarComponent from "../componnets/Navbar"; // แก้เป็น ../components/Navbar ถ้าโฟลเดอร์คุณสะกดถูก
+import NavbarComponent from "../componnets/Navbar"; // ⚠️ ถ้าโฟลเดอร์สะกดเป็น components ให้แก้ให้ตรง
 
 export default function RentalCheck() {
-  // ---------- ตัวอย่างข้อมูลการเช่า ----------
-  const [rentals, setRentals] = useState([
+  // ---------- ตัวอย่างข้อมูล ----------
+  const [rentals] = useState([
     {
       id: "BK-0001",
       lotId: 1,
@@ -61,67 +61,50 @@ export default function RentalCheck() {
     },
   ]);
 
-  // ---------- states สำหรับค้นหา/กรอง/เพจิเนชัน ----------
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 8;
-
-  // ---------- Modal รายละเอียด ----------
   const [detail, setDetail] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
-  const openDetail = (item) => {
-    setDetail(item);
-    setShowDetail(true);
-  };
-  const closeDetail = () => setShowDetail(false);
+  const pageSize = 8;
 
-  // ---------- คำนวณผลรวม ----------
   const toTHB = (n) =>
     n?.toLocaleString("th-TH", { style: "currency", currency: "THB" });
 
-  const withComputed = useMemo(
+  // ✅ คำนวณค่ารวมและจำนวนวัน
+  const computedRentals = useMemo(
     () =>
       rentals.map((r) => {
-        const nights =
+        const days =
           1 +
           Math.round(
             (new Date(r.endDate) - new Date(r.startDate)) / (1000 * 60 * 60 * 24)
           );
-        const rentTotal = nights * r.pricePerDay;
-        const grandTotal = rentTotal + (r.deposit || 0);
-        return { ...r, nights, rentTotal, grandTotal };
+        const rentTotal = days * r.pricePerDay;
+        const grandTotal = rentTotal + r.deposit;
+        return { ...r, days, rentTotal, grandTotal };
       }),
     [rentals]
   );
 
-  // ---------- ฟังก์ชันกรอง ----------
+  // ✅ ฟังก์ชันกรอง
   const filtered = useMemo(() => {
-    const qLower = q.trim().toLowerCase();
-    return withComputed.filter((r) => {
+    const qLower = q.toLowerCase();
+    return computedRentals.filter((r) => {
       const matchQ =
         !qLower ||
         [r.id, r.lotName, r.zone, r.renter, r.phone, r.note]
           .join(" ")
           .toLowerCase()
           .includes(qLower);
-
       const matchStatus = !statusFilter || r.status === statusFilter;
-
-      const inRange =
-        (!dateFrom || new Date(r.startDate) >= new Date(dateFrom)) &&
-        (!dateTo || new Date(r.endDate) <= new Date(dateTo));
-
-      return matchQ && matchStatus && inRange;
+      return matchQ && matchStatus;
     });
-  }, [withComputed, q, statusFilter, dateFrom, dateTo]);
+  }, [computedRentals, q, statusFilter]);
 
-  // ---------- รีเซ็ตหน้าเมื่อมีการค้นหา/กรอง ----------
-  useEffect(() => setPage(1), [q, statusFilter, dateFrom, dateTo]);
+  // ✅ รีเซ็ตหน้าเมื่อกรอง
+  useEffect(() => setPage(1), [q, statusFilter]);
 
-  // ---------- เพจิเนชัน ----------
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
 
@@ -136,14 +119,14 @@ export default function RentalCheck() {
         <Card className="shadow-sm border-0">
           <Card.Body>
             <Row className="g-3 align-items-end">
-              <Col xs={12} md={4}>
+              <Col xs={12} md={5}>
                 <Form.Label>ค้นหา</Form.Label>
                 <InputGroup>
                   <InputGroup.Text>
                     <i className="bi bi-search" />
                   </InputGroup.Text>
                   <Form.Control
-                    placeholder="ชื่อผู้เช่า / เบอร์ / เลขที่เช่า / ล็อต / โซน / หมายเหตุ"
+                    placeholder="ชื่อผู้เช่า / เบอร์โทร / ล็อต / โซน / หมายเหตุ"
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                   />
@@ -163,33 +146,13 @@ export default function RentalCheck() {
                 </Form.Select>
               </Col>
 
-              <Col xs={6} md={2}>
-                <Form.Label>ตั้งแต่วันที่</Form.Label>
-                <Form.Control
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                />
-              </Col>
-
-              <Col xs={6} md={2}>
-                <Form.Label>ถึงวันที่</Form.Label>
-                <Form.Control
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                />
-              </Col>
-
-              <Col xs={12} md={1}>
+              <Col xs={12} md={2}>
                 <Button
                   className="w-100"
                   variant="outline-secondary"
                   onClick={() => {
                     setQ("");
                     setStatusFilter("");
-                    setDateFrom("");
-                    setDateTo("");
                   }}
                 >
                   ล้าง
@@ -199,6 +162,7 @@ export default function RentalCheck() {
           </Card.Body>
         </Card>
 
+        {/* ตารางแสดงผล */}
         <Card className="shadow-sm border-0 mt-3">
           <Card.Body>
             <div className="d-flex justify-content-between align-items-center mb-3">
@@ -239,7 +203,7 @@ export default function RentalCheck() {
                         <small className="text-muted">{r.phone}</small>
                       </td>
                       <td>
-                        {r.startDate} → {r.endDate} ({r.nights} วัน)
+                        {r.startDate} → {r.endDate} ({r.days} วัน)
                       </td>
                       <td className="text-end">
                         {toTHB(r.rentTotal)}{" "}
@@ -249,29 +213,16 @@ export default function RentalCheck() {
                         <Badge bg={badgeVariant(r.status)}>{r.status}</Badge>
                       </td>
                       <td className="text-center">
-                        <div className="d-flex justify-content-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline-primary"
-                            onClick={() => openDetail(r)}
-                          >
-                            รายละเอียด
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline-danger"
-                            disabled={r.status === "ยกเลิก"}
-                            onClick={() =>
-                              setRentals((prev) =>
-                                prev.map((x) =>
-                                  x.id === r.id ? { ...x, status: "ยกเลิก" } : x
-                                )
-                              )
-                            }
-                          >
-                            ยกเลิก
-                          </Button>
-                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline-primary"
+                          onClick={() => {
+                            setDetail(r);
+                            setShowDetail(true);
+                          }}
+                        >
+                          รายละเอียด
+                        </Button>
                       </td>
                     </tr>
                   ))
@@ -311,8 +262,8 @@ export default function RentalCheck() {
         </Card>
       </Container>
 
-      {/* Modal รายละเอียด */}
-      <Modal show={showDetail} onHide={closeDetail} centered size="lg">
+      {/* ✅ Modal รายละเอียด */}
+      <Modal show={showDetail} onHide={() => setShowDetail(false)} centered size="lg">
         <Modal.Header closeButton>
           <Modal.Title>รายละเอียดการเช่า {detail ? `• ${detail.id}` : ""}</Modal.Title>
         </Modal.Header>
@@ -334,7 +285,7 @@ export default function RentalCheck() {
 
                   <dt className="col-5">ช่วงวันที่</dt>
                   <dd className="col-7">
-                    {detail.startDate} → {detail.endDate} ({detail.nights} วัน)
+                    {detail.startDate} → {detail.endDate} ({detail.days} วัน)
                   </dd>
 
                   <dt className="col-5">ราคา/วัน</dt>
@@ -365,22 +316,9 @@ export default function RentalCheck() {
           )}
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="outline-secondary" onClick={closeDetail}>
+          <Button variant="outline-secondary" onClick={() => setShowDetail(false)}>
             ปิด
           </Button>
-          {detail?.status !== "ยกเลิก" && (
-            <Button
-              variant="outline-danger"
-              onClick={() => {
-                setRentals((prev) =>
-                  prev.map((x) => (x.id === detail.id ? { ...x, status: "ยกเลิก" } : x))
-                );
-                closeDetail();
-              }}
-            >
-              ยกเลิกการเช่า
-            </Button>
-          )}
         </Modal.Footer>
       </Modal>
     </>

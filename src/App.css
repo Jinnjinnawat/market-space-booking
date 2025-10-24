@@ -40,3 +40,26 @@
 .read-the-docs {
   color: #888;
 }
+
+/* เน้นลิงก์ที่ active ใน Sidebar */
+/* ไฮไลต์ลิงก์ที่ active */
+.admin-sidebar .nav-link.active {
+  background: rgba(255,255,255,0.12);
+  color: #fff !important;
+  border-radius: .5rem;
+}
+
+/* เนื้อหาหลักขยับขวาตามความกว้าง Sidebar */
+.admin-content {
+  margin-left: 260px;
+  transition: margin-left .2s ease;
+}
+
+/* จอเล็ก: ลดตัวอักษรและระยะห่างนิดหน่อย แต่ยังคงแถบซ้ายไว้ */
+@media (max-width: 768px) {
+  .admin-sidebar { width: 220px !important; }
+  .admin-content { margin-left: 220px; }
+  .admin-sidebar .nav-link { padding: .5rem .75rem; }
+}
+.card { position: static !important; }
+.row { align-items: stretch; }

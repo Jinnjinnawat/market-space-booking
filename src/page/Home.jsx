@@ -9,61 +9,87 @@ import {
   Badge,
   ListGroup,
 } from "react-bootstrap";
-import NavbarComponent from "../componnets/Navbar"; // ถ้าโฟลเดอร์สะกด components ให้แก้ path ให้ตรง
+import NavbarComponent from "../componnets/Navbar";
 import FromRegister from "../componnets/Formregister";
 
+// ✅ ตัวช่วยฟอร์แมตวันที่สั้น ๆ
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("th-TH") : "-");
+
+// ✅ ข้อมูลตั้งต้น (ย้ายออกมานอกคอมโพเนนต์)
+const initialLots = [
+  {
+    id: 1,
+    name: "ล็อตที่ 1",
+    status: "ว่าง",
+    size: "2x2 ม.",
+    pricePerDay: 300,
+    deposit: 500,
+    zone: "A",
+    amenities: ["ปลั๊กไฟ", "หลังคา", "ใกล้ทางเข้า"],
+    desc: "ทำเลดี เหมาะขายของกินและของแห้ง คนเดินผ่านเยอะ",
+    image: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
+    renters: [
+      { name: "คุณเอ็ม", phone: "08x-xxx-xxxx", from: "2025-10-01", to: "2025-10-10" },
+    ],
+  },
+  {
+    id: 2,
+    name: "ล็อตที่ 2",
+    status: "ถูกเช่าแล้ว",
+    size: "3x2 ม.",
+    pricePerDay: 350,
+    deposit: 500,
+    zone: "B",
+    amenities: ["ปลั๊กไฟ", "ใกล้ห้องน้ำ"],
+    desc: "เหมาะขายเสื้อผ้า/เครื่องประดับ",
+    image: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
+    renters: [
+      { name: "คุณเอ", phone: "08x-xxx-xxxx", from: "2025-10-20" },
+      { name: "คุณบี", phone: "09x-xxx-xxxx", from: "2025-10-15", to: "2025-10-18" },
+    ],
+  },
+  {
+    id: 3,
+    name: "ล็อตที่ 3",
+    status: "ว่าง",
+    size: "2x2 ม.",
+    pricePerDay: 280,
+    deposit: 500,
+    zone: "A",
+    amenities: ["ปลั๊กไฟ"],
+    desc: "ทำเลกลางตลาด มองเห็นชัดจากหลายทาง",
+    image: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
+    renters: [],
+  },
+];
+
 export default function Home() {
+  const [lots, setLots] = useState(initialLots);
   const [showRegister, setShowRegister] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedLot, setSelectedLot] = useState(null);
 
-  // ฟังก์ชันช่วยแปลงราคาเป็น THB
   const toTHB = (n) =>
     n?.toLocaleString("th-TH", { style: "currency", currency: "THB" });
 
-  // ตัวอย่างข้อมูลล็อตตลาด (เพิ่มรายละเอียด)
-  const lots = [
-    {
-      id: 1,
-      name: "ล็อตที่ 1",
-      status: "ว่าง",
-      size: "2x2 ม.",
-      pricePerDay: 300,
-      deposit: 500,
-      zone: "A",
-      amenities: ["ปลั๊กไฟ", "หลังคา", "ใกล้ทางเข้า"],
-      desc: "ทำเลดี เหมาะขายของกินและของแห้ง คนเดินผ่านเยอะ",
-      image:
-        "https://cdn-icons-png.flaticon.com/512/149/149071.png",
-    },
-    {
-      id: 2,
-      name: "ล็อตที่ 2",
-      status: "ถูกเช่าแล้ว",
-      size: "3x2 ม.",
-      pricePerDay: 350,
-      deposit: 500,
-      zone: "B",
-      amenities: ["ปลั๊กไฟ", "ใกล้ห้องน้ำ"],
-      desc: "เหมาะขายเสื้อผ้า/เครื่องประดับ",
-      image:
-        "https://cdn-icons-png.flaticon.com/512/149/149071.png",
-    },
-    {
-      id: 3,
-      name: "ล็อตที่ 3",
-      status: "ว่าง",
-      size: "2x2 ม.",
-      pricePerDay: 280,
-      deposit: 500,
-      zone: "A",
-      amenities: ["ปลั๊กไฟ"],
-      desc: "ทำเลกลางตลาด มองเห็นชัดจากหลายทาง",
-      image:
-        "https://cdn-icons-png.flaticon.com/512/149/149071.png",
-    },
-    // ... เพิ่มตามต้องการ
-  ];
+  // ✅ ฟังก์ชันเลือกผู้เช่าปัจจุบัน (ยังเช่าอยู่ ณ วันนี้)
+  const getActiveRenters = (lot) => {
+    if (!lot?.renters?.length) return [];
+    const today = new Date();
+    return lot.renters.filter((r) => {
+      if (!r.to) return true; // ไม่มีวันสิ้นสุด = ยังเช่าอยู่
+      return new Date(r.to) >= today;
+    });
+  };
+
+  // ✅ เพิ่มผู้เช่าลงในล็อต (ใช้ตอนบันทึกฟอร์ม)
+  const addRenterToLot = (lotId, renter) => {
+    setLots((prev) =>
+      prev.map((l) =>
+        l.id === lotId ? { ...l, renters: [...(l.renters || []), renter] } : l
+      )
+    );
+  };
 
   // เปิด/ปิดฟอร์มลงทะเบียน
   const openRegister = (lot) => {
@@ -130,12 +156,12 @@ export default function Home() {
                     <Button variant="outline-primary" onClick={() => openDetails(lot)}>
                       รายละเอียด
                     </Button>
+                    {/* ✅ เปิดให้กดเสมอ เพื่อใช้เป็นการลงทะเบียนเข้าร่วมประมูล/คิวเช่า */}
                     <Button
-                      variant={lot.status === "ว่าง" ? "success" : "secondary"}
-                      disabled={lot.status !== "ว่าง"}
+                      variant="success"
                       onClick={() => openRegister(lot)}
                     >
-                      เช่าพื้นที่
+                      ลงทะเบียนเข้าร่วมประมูล
                     </Button>
                   </div>
                 </Card.Body>
@@ -193,6 +219,72 @@ export default function Home() {
                   <ListGroup.Item>
                     <strong>คำอธิบาย:</strong> {selectedLot.desc}
                   </ListGroup.Item>
+
+                  {/* ✅ ผู้เช่า (ปัจจุบัน) */}
+                  <ListGroup.Item>
+                    <strong>ผู้เช่า (ปัจจุบัน):</strong>{" "}
+                    {(() => {
+                      const actives = getActiveRenters(selectedLot);
+                      const count = actives.length;
+                      if (count === 0) {
+                        return "ไม่มี (ล็อตว่างหรือไม่มีผู้เช่าปัจจุบัน)";
+                      }
+                      return (
+                        <>
+                          {count} คน
+                          <div className="mt-2 d-flex flex-wrap gap-2">
+                            {actives.map((r, idx) => (
+                              <Badge key={idx} bg="info" className="fw-normal">
+                                {r.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </ListGroup.Item>
+
+                  {/* ✅ ผู้เช่าทั้งหมดของล็อตนี้ */}
+                  <ListGroup.Item>
+                    <strong>ผู้เช่าทั้งหมด:</strong>{" "}
+                    {selectedLot.renters?.length ? (
+                      <div className="mt-2">
+                        {selectedLot.renters.map((r, i) => {
+                          // ตีความสถานะ
+                          const today = new Date();
+                          const isActive =
+                            !r.to || new Date(r.to) >= today;
+                          const statusText = !r.to
+                            ? "ไม่กำหนดสิ้นสุด"
+                            : isActive
+                            ? "กำลังเช่า"
+                            : "สิ้นสุดแล้ว";
+                          const badgeBg = !r.to
+                            ? "warning"
+                            : isActive
+                            ? "success"
+                            : "secondary";
+
+                          return (
+                            <div
+                              key={i}
+                              className="d-flex align-items-center justify-content-between border rounded p-2 mb-2"
+                            >
+                              <div>
+                                <div className="fw-semibold">{r.name}</div>
+                                <div className="text-muted small">
+                                  โทร: {r.phone || "-"} | จาก {fmtDate(r.from)} ถึง {fmtDate(r.to)}
+                                </div>
+                              </div>
+                              <Badge bg={badgeBg}>{statusText}</Badge>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      "ยังไม่มีรายชื่อผู้เช่า/ผู้เข้าร่วมประมูล"
+                    )}
+                  </ListGroup.Item>
                 </ListGroup>
               </Col>
             </Row>
@@ -207,12 +299,8 @@ export default function Home() {
             <Button variant="outline-secondary" onClick={closeDetails}>
               ปิด
             </Button>
-            <Button
-              variant={selectedLot?.status === "ว่าง" ? "success" : "secondary"}
-              disabled={selectedLot?.status !== "ว่าง"}
-              onClick={rentFromDetails}
-            >
-              เช่าพื้นที่
+            <Button variant="success" onClick={rentFromDetails}>
+              ลงทะเบียนเข้าร่วมประมูล
             </Button>
           </div>
         </Modal.Footer>
@@ -222,11 +310,20 @@ export default function Home() {
       <Modal show={showRegister} onHide={closeRegister} centered size="lg">
         <Modal.Header closeButton>
           <Modal.Title>
-            ลงทะเบียนเช่าพื้นที่ {selectedLot ? `- ${selectedLot.name}` : ""}
+            ลงทะเบียนเข้าร่วมประมูล {selectedLot ? `- ${selectedLot.name}` : ""}
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <FromRegister selectedLot={selectedLot} onClose={closeRegister} />
+          {/* สำคัญ: ส่ง onSave เพื่อให้ฟอร์มคืนข้อมูลผู้เช่า */}
+          <FromRegister
+            selectedLot={selectedLot}
+            onClose={closeRegister}
+            onSave={(renter) => {
+              if (!selectedLot) return;
+              addRenterToLot(selectedLot.id, renter);
+              closeRegister();
+            }}
+          />
         </Modal.Body>
       </Modal>
     </>
