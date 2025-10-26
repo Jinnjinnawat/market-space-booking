@@ -21,57 +21,24 @@ import {
 } from "react-bootstrap";
 import AdminSidebar from "../componnets/AdminSideBar";
 
+// 🔥 Firestore
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "../service/Firebase"; 
+
 export default function AdminAnnouncementsPage() {
-  // --- Mock data (เชื่อม Firestore/MSSQL ภายหลังได้) ---
-  const [items, setItems] = useState([
-    {
-      id: 1,
-      title: "ระบบเช่าพื้นที่ตลาดนัด เปิดใช้งานเวอร์ชัน 1.2",
-      summary: "ปรับปรุงความเร็วการค้นหาล็อต + เพิ่มตัวกรองสิ่งอำนวยความสะดวก",
-      content:
-        "เราได้อัปเดตระบบเป็นเวอร์ชัน 1.2 โดยมุ่งเน้นเพิ่มประสิทธิภาพการค้นหาและปรับปรุง UI ให้ใช้งานง่ายขึ้น ทั้งนี้มีการเปลี่ยนแปลงโครงสร้างข้อมูลบางส่วนในฝั่งผู้ดูแล โปรดตรวจสอบคู่มือ",
-      category: "อัปเดตระบบ",
-      date: "2025-10-16T10:30:00+07:00",
-      pinned: true,
-      attachments: [
-        { name: "Release Notes v1.2.pdf", url: "#" },
-        { name: "Admin Guide (TH).pdf", url: "#" },
-      ],
-    },
-    {
-      id: 2,
-      title: "แจ้งปิดปรับปรุงระบบ 22 ต.ค. 2568 (01:00–03:00)",
-      summary: "เพื่ออัปเกรดฐานข้อมูลและสำรองข้อมูล",
-      content:
-        "ขออภัยในความไม่สะดวก ระบบจะไม่สามารถใช้งานได้ชั่วคราวในวันที่ 22 ต.ค. 2568 เวลา 01:00–03:00 น. เพื่ออัปเกรดฐานข้อมูลและสำรองข้อมูล",
-      category: "ปิดปรับปรุง",
-      date: "2025-10-18T09:00:00+07:00",
-      pinned: false,
-      attachments: [],
-    },
-    {
-      id: 3,
-      title: "กิจกรรมอบรมผู้ค้าใหม่ ประจำเดือน พ.ย.",
-      summary: "สอนใช้งานระบบจอง การชำระเงิน และข้อปฏิบัติภายในตลาด",
-      content:
-        "เปิดรับสมัครผู้ค้าใหม่ (จำนวนจำกัด) สำหรับเวิร์กช็อปสอนใช้งานระบบเช่าและข้อปฏิบัติภายในตลาด จัดวันที่ 9 พ.ย. 2568 ลงทะเบียนภายใน 3 พ.ย.",
-      category: "กิจกรรม",
-      date: "2025-10-12T13:00:00+07:00",
-      pinned: false,
-      attachments: [{ name: "กำหนดการ.pdf", url: "#" }],
-    },
-    {
-      id: 4,
-      title: "ประกาศด่วน: ปรับปรุงกติกาการชำระค่าเช่า",
-      summary: "ชำระล่วงหน้าอย่างน้อย 3 วันก่อนวันใช้งาน",
-      content:
-        "เพื่อความเป็นระเบียบและลดการยกเลิกกะทันหัน ตั้งแต่ 1 พ.ย. 2568 เป็นต้นไป ขอให้ผู้เช่าชำระเงินล่วงหน้าอย่างน้อย 3 วันก่อนวันใช้งาน หากไม่ชำระตามกำหนด ระบบจะยกเลิกการจองโดยอัตโนมัติ",
-      category: "ประกาศด่วน",
-      date: "2025-10-10T08:00:00+07:00",
-      pinned: false,
-      attachments: [],
-    },
-  ]);
+  // --- Data states ---
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   // --- UI States ---
   const [q, setQ] = useState("");
@@ -98,29 +65,64 @@ export default function AdminAnnouncementsPage() {
 
   const categories = ["ทั้งหมด", "ประกาศด่วน", "ปิดปรับปรุง", "อัปเดตระบบ", "กิจกรรม"];
 
-  // --- Derived list ---
-  const filtered = useMemo(() => {
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-    const now = new Date();
+  // ---------- Firestore Realtime ----------
+  useEffect(() => {
+    setLoading(true);
+    // เรียง: ปักหมุดก่อน แล้วตามด้วย updatedAt ใหม่ไปเก่า (fallback createdAt)
+    const colRef = collection(db, "announcements");
+    const qRef = query(
+      colRef,
+      orderBy("pinned", "desc"),
+      orderBy("updatedAt", "desc")
+    );
+    const unsub = onSnapshot(
+      qRef,
+      (snap) => {
+        const now = Date.now();
+        const sevenDays = 7 * 24 * 60 * 60 * 1000;
+        const data = snap.docs.map((d) => {
+          const v = d.data();
+          const dateObj =
+            v.updatedAt?.toDate?.() ??
+            v.createdAt?.toDate?.() ??
+            (v.date ? new Date(v.date) : new Date());
+        return {
+            id: d.id,
+            title: v.title || "",
+            summary: v.summary || "",
+            content: v.content || "",
+            category: v.category || "ประกาศด่วน",
+            pinned: !!v.pinned,
+            createdAt: v.createdAt,
+            updatedAt: v.updatedAt,
+            attachments: v.attachments || [],
+            // สำหรับ UI
+            dateDisplay: dateObj,
+            isNew: now - dateObj.getTime() <= sevenDays,
+          };
+        });
+        setItems(data);
+        setLoading(false);
+      },
+      (err) => {
+        console.error(err);
+        setToast({ show: true, text: "โหลดข้อมูลไม่สำเร็จ" });
+        setLoading(false);
+      }
+    );
+    return () => unsub();
+  }, []);
 
-    return items
-      .filter((it) => {
-        const matchQ = [it.title, it.summary, it.content]
-          .join(" ")
-          .toLowerCase()
-          .includes(q.toLowerCase());
-        const matchCat = category === "ทั้งหมด" ? true : it.category === category;
-        return matchQ && matchCat;
-      })
-      .sort((a, b) => {
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
-        return new Date(b.date).getTime() - new Date(a.date).getTime();
-      })
-      .map((it) => ({
-        ...it,
-        isNew: now - new Date(it.date).getTime() <= sevenDaysMs,
-      }));
+  // --- Derived list (filter + paginate เฉพาะฝั่งหน้าบ้าน) ---
+  const filtered = useMemo(() => {
+    return items.filter((it) => {
+      const matchQ = [it.title, it.summary, it.content]
+        .join(" ")
+        .toLowerCase()
+        .includes(q.toLowerCase());
+      const matchCat = category === "ทั้งหมด" ? true : it.category === category;
+      return matchQ && matchCat;
+    });
   }, [items, q, category]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -164,71 +166,85 @@ export default function AdminAnnouncementsPage() {
   const openEdit = (it) => {
     setEditingId(it.id);
     setForm({
-      title: it.title,
-      summary: it.summary,
-      content: it.content,
-      category: it.category,
-      pinned: it.pinned,
+      title: it.title ?? "",
+      summary: it.summary ?? "",
+      content: it.content ?? "",
+      category: it.category ?? "ประกาศด่วน",
+      pinned: !!it.pinned,
     });
     setShowForm(true);
   };
 
-  const saveForm = (e) => {
+  // ---------- Create / Update ----------
+  const saveForm = async (e) => {
     e.preventDefault();
-    const nowIso = new Date().toISOString();
-
-    if (editingId == null) {
-      const nextId = items.length ? Math.max(...items.map((i) => i.id)) + 1 : 1;
-      const newItem = {
-        id: nextId,
-        title: form.title || "Untitled",
+    try {
+      const payload = {
+        title: form.title?.trim() || "Untitled",
         summary: form.summary || "",
         content: form.content || "",
         category: form.category || "ประกาศด่วน",
-        date: nowIso,
         pinned: !!form.pinned,
-        attachments: [],
+        updatedAt: serverTimestamp(),
       };
-      setItems((prev) => [newItem, ...prev]);
-      setToast({ show: true, text: "สร้างประกาศใหม่เรียบร้อย" });
-    } else {
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === editingId
-            ? {
-                ...it,
-                title: form.title,
-                summary: form.summary,
-                content: form.content,
-                category: form.category,
-                pinned: !!form.pinned,
-                date: nowIso, // ถ้าต้องคงเวลาเดิม ให้ลบบรรทัดนี้
-              }
-            : it
-        )
-      );
-      setToast({ show: true, text: "บันทึกการแก้ไขเรียบร้อย" });
+
+      if (editingId == null) {
+        await addDoc(collection(db, "announcements"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+          // attachments: [] // ถ้าจะรองรับไฟล์แนบในอนาคต
+        });
+        setToast({ show: true, text: "สร้างประกาศใหม่เรียบร้อย" });
+      } else {
+        await updateDoc(doc(db, "announcements", editingId), payload);
+        setToast({ show: true, text: "บันทึกการแก้ไขเรียบร้อย" });
+      }
+
+      setShowForm(false);
+      setEditingId(null);
+    } catch (err) {
+      console.error(err);
+      setToast({ show: true, text: "บันทึกไม่สำเร็จ" });
     }
-
-    setShowForm(false);
-    setEditingId(null);
   };
 
+  // ---------- Delete ----------
   const confirmDeleteItem = (id) => setConfirmDelete({ show: true, id });
-  const doDelete = () => {
-    setItems((prev) => prev.filter((x) => x.id !== confirmDelete.id));
-    setConfirmDelete({ show: false, id: null });
-    setToast({ show: true, text: "ลบประกาศเรียบร้อย" });
+  const doDelete = async () => {
+    try {
+      const id = confirmDelete.id;
+      if (!id) return;
+      await deleteDoc(doc(db, "announcements", id));
+      setToast({ show: true, text: "ลบประกาศเรียบร้อย" });
+    } catch (e) {
+      console.error(e);
+      setToast({ show: true, text: "ลบไม่สำเร็จ" });
+    } finally {
+      setConfirmDelete({ show: false, id: null });
+    }
   };
 
-  const togglePin = (id) => {
-    setItems((prev) =>
-      prev.map((x) => (x.id === id ? { ...x, pinned: !x.pinned } : x))
-    );
+  // ---------- Pin toggle ----------
+  const togglePin = async (id) => {
+    try {
+      const target = items.find((x) => x.id === id);
+      if (!target) return;
+      // optimistic UI
+      setItems((prev) => prev.map((x) => (x.id === id ? { ...x, pinned: !x.pinned } : x)));
+      await updateDoc(doc(db, "announcements", id), {
+        pinned: !target.pinned,
+        updatedAt: serverTimestamp(),
+      });
+      // ไม่ต้องรีโหลด เพราะ onSnapshot จะเด้งกลับมาเอง
+    } catch (e) {
+      console.error(e);
+      setToast({ show: true, text: "อัปเดตปักหมุดไม่สำเร็จ" });
+    }
   };
 
+  // ---------- Export CSV ----------
   const exportCSV = () => {
-    const header = ["id", "title", "summary", "content", "category", "date", "pinned"];
+    const header = ["id", "title", "summary", "content", "category", "updatedAt", "pinned"];
     const rows = [header.join(",")].concat(
       items.map((it) =>
         [
@@ -237,8 +253,8 @@ export default function AdminAnnouncementsPage() {
           JSON.stringify(it.summary ?? ""),
           JSON.stringify(it.content ?? ""),
           JSON.stringify(it.category ?? ""),
-          it.date,
-          it.pinned,
+          it.dateDisplay?.toISOString?.() ?? "",
+          it.pinned ?? false,
         ].join(",")
       )
     );
@@ -257,15 +273,13 @@ export default function AdminAnnouncementsPage() {
   return (
     <>
       <AdminSidebar />
-      <Container
-        className="py-4"
-        // ถ้า AdminSidebar เป็น fixed กว้าง ~240px ให้เผื่อระยะซ้าย
-        style={{ marginLeft: 240 }}
-      >
+      <Container className="py-4" style={{ marginLeft: 240 }}>
         <Row className="align-items-center g-2 mb-3">
           <Col md>
             <h2 className="mb-0">📣 จัดการประกาศ (ผู้ดูแล)</h2>
-            <div className="text-muted">สร้าง/แก้ไข/ลบ และปักหมุดประกาศของระบบเช่าพื้นที่ตลาดนัด</div>
+            <div className="text-muted">
+              {loading ? "กำลังโหลดข้อมูล..." : "สร้าง/แก้ไข/ลบ และปักหมุดประกาศของระบบเช่าพื้นที่ตลาดนัด"}
+            </div>
           </Col>
           <Col md="auto">
             <ButtonGroup>
@@ -316,7 +330,7 @@ export default function AdminAnnouncementsPage() {
           </Col>
         </Row>
 
-        {/* รายการข่าวสารแบบ Card Grid (แก้ทับกันแล้ว) */}
+        {/* รายการข่าวสาร */}
         <Row xs={1} md={2} lg={3} className="g-3 gy-4">
           {paged.map((it) => (
             <Col key={it.id} className="d-flex">
@@ -330,7 +344,7 @@ export default function AdminAnnouncementsPage() {
 
                   <Card.Title className="mb-1">{it.title}</Card.Title>
                   <Card.Subtitle className="text-muted" style={{ fontSize: 14 }}>
-                    {new Date(it.date).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}
+                    {it.dateDisplay?.toLocaleString?.("th-TH", { dateStyle: "medium", timeStyle: "short" })}
                   </Card.Subtitle>
 
                   <Card.Text className="mt-2" style={{ minHeight: 60 }}>
@@ -383,7 +397,7 @@ export default function AdminAnnouncementsPage() {
               {activeItem?.pinned && <Badge bg="dark">ปักหมุด</Badge>}
             </Stack>
             <div className="text-muted mb-3">
-              {activeItem && new Date(activeItem.date).toLocaleString("th-TH", { dateStyle: "full", timeStyle: "short" })}
+              {activeItem?.dateDisplay?.toLocaleString?.("th-TH", { dateStyle: "full", timeStyle: "short" })}
             </div>
             <p style={{ whiteSpace: "pre-wrap" }}>{activeItem?.content}</p>
 
@@ -484,7 +498,7 @@ export default function AdminAnnouncementsPage() {
 
             <hr className="my-4" />
             <small className="text-muted">
-              *เชื่อมต่อฐานข้อมูล: เปลี่ยนส่วน saveForm(), doDelete(), togglePin() ให้เรียก Firestore/MSSQL และโหลดรายการด้วย useEffect() แทน mock data
+              *ข้อมูลเชื่อมกับ Firestore collection: <code>announcements</code>
             </small>
           </Offcanvas.Body>
         </Offcanvas>

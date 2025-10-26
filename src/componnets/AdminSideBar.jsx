@@ -32,16 +32,13 @@ export default function AdminSidebar() {
 
       {/* เมนูแอดมิน */}
       <Nav className="flex-column mt-3 px-2">
-        <div className="small text-secondary px-3 mb-2">แอดมิน</div>
 
         <Nav.Link as={NavLink} to="/announcements" className={linkClass} end>
-          
           <span>จัดการข่าวสาร</span>
         </Nav.Link>
 
-        <Nav.Link as={NavLink} to="/admin/rentals" className={linkClass}>
-          <span>🧾</span>
-          <span>จัดการการเช่า</span>
+        <Nav.Link as={NavLink} to="/lots" className={linkClass}>
+          <span>จัดการการพื้นที่</span>
         </Nav.Link>
 
         <Nav.Link as={NavLink} to="/admin/users" className={linkClass}>

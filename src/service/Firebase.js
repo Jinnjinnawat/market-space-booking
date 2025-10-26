@@ -1,12 +1,10 @@
-// Import the functions you need from the SDKs you need
+// Import ฟังก์ชันหลักจาก Firebase SDK
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getFirestore } from "firebase/firestore"; // <-- เพิ่ม Firestore เข้ามา
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// Firebase configuration ของโปรเจกต์คุณ
 const firebaseConfig = {
   apiKey: "AIzaSyASYEbW-YdV0Pccu4ufD8qzmOoRy0ODjUc",
   authDomain: "rentalmaket.firebaseapp.com",
@@ -20,5 +18,10 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
+
+// ✅ Export Authentication
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// ✅ Export Firestore สำหรับ CRUD ข้อมูลตลาด
+export const db = getFirestore(app);
