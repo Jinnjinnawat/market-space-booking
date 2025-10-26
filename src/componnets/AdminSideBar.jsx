@@ -41,9 +41,8 @@ export default function AdminSidebar() {
           <span>จัดการการพื้นที่</span>
         </Nav.Link>
 
-        <Nav.Link as={NavLink} to="/admin/users" className={linkClass}>
-          <span>👤</span>
-          <span>ผู้ใช้งาน</span>
+        <Nav.Link as={NavLink} to="/requeststable" className={linkClass}>
+          <span>จัดการการเช่า</span>
         </Nav.Link>
       </Nav>
 

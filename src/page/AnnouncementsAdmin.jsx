@@ -277,9 +277,7 @@ export default function AdminAnnouncementsPage() {
         <Row className="align-items-center g-2 mb-3">
           <Col md>
             <h2 className="mb-0">📣 จัดการประกาศ (ผู้ดูแล)</h2>
-            <div className="text-muted">
-              {loading ? "กำลังโหลดข้อมูล..." : "สร้าง/แก้ไข/ลบ และปักหมุดประกาศของระบบเช่าพื้นที่ตลาดนัด"}
-            </div>
+           
           </Col>
           <Col md="auto">
             <ButtonGroup>
@@ -497,9 +495,7 @@ export default function AdminAnnouncementsPage() {
             </Form>
 
             <hr className="my-4" />
-            <small className="text-muted">
-              *ข้อมูลเชื่อมกับ Firestore collection: <code>announcements</code>
-            </small>
+           
           </Offcanvas.Body>
         </Offcanvas>
 

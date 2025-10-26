@@ -14,7 +14,7 @@ import Login from "./page/Login";
 import AdminLotsPage from "./page/AdminLotsPage";
 import AuthProvider from "./context/AuthProvider";
 import ProtectedRoute from "./componnets/ProtectedRoute";
-
+import RentalRequestsTable from "./page/RentalRequestsTable";
 export default function App() {
   return (
     
@@ -31,6 +31,7 @@ export default function App() {
           <Route path="/home" element={<Home />} />
           <Route path="/rentalCheck" element={<RentalCheck />} />
           <Route path="/lots" element={<AdminLotsPage />} />
+          <Route path="/requeststable" element={<RentalRequestsTable />} />
           {/* หน้า private (ต้องล็อกอินก่อน) */}
         
         </Routes>
