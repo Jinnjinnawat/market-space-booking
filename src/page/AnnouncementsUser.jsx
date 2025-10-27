@@ -20,7 +20,7 @@ import {
 } from "react-bootstrap";
 
 import NavbarComponent from "../componnets/Navbar";
-
+import Footer from "../componnets/Footer";
 export default function AnnouncementsPage() {
   // ----------- ตัวอย่างข้อมูลข่าวสาร (mock) -----------
   const seed = [
@@ -165,12 +165,7 @@ export default function AnnouncementsPage() {
           <div className="text-muted">อัปเดตล่าสุดสำหรับผู้ใช้งานตลาดนัด</div>
         </div>
         <div className="ms-auto">
-          <Button
-            variant="outline-primary"
-            onClick={() => setShowSubscribeToast(true)}
-          >
-            ติดตามข่าวสาร
-          </Button>
+          
         </div>
       </Stack>
 
@@ -290,13 +285,7 @@ export default function AnnouncementsPage() {
                         <Button size="sm" variant="primary" onClick={() => setSelected(n)}>
                           อ่านเพิ่มเติม
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline-secondary"
-                          onClick={() => navigator?.share ? navigator.share({ title: n.title, text: n.content, url: window.location.href }) : copyToClipboard(`${n.title} — ${n.content}`)}
-                        >
-                          แชร์
-                        </Button>
+                       
                       </div>
                     </Stack>
                   </Card.Body>
@@ -418,6 +407,7 @@ export default function AnnouncementsPage() {
         </Toast>
       </ToastContainer>
     </Container>
+    <Footer></Footer>
     </>
   );
 }

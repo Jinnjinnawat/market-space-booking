@@ -11,56 +11,18 @@ import {
   Row,
   Table,
   Pagination,
+  Spinner,
 } from "react-bootstrap";
 import NavbarComponent from "../componnets/Navbar"; // ⚠️ ถ้าโฟลเดอร์สะกดเป็น components ให้แก้ให้ตรง
 
-export default function RentalCheck() {
-  // ---------- ตัวอย่างข้อมูล ----------
-  const [rentals] = useState([
-    {
-      id: "BK-0001",
-      lotId: 1,
-      lotName: "ล็อตที่ 1",
-      zone: "A",
-      renter: "สมชาย ใจดี",
-      phone: "081-234-5678",
-      startDate: "2025-10-24",
-      endDate: "2025-10-26",
-      pricePerDay: 300,
-      deposit: 500,
-      status: "ยืนยันแล้ว", // ยืนยันแล้ว | รอชำระ | ยกเลิก
-      note: "ขายของกิน",
-    },
-    {
-      id: "BK-0002",
-      lotId: 3,
-      lotName: "ล็อตที่ 3",
-      zone: "A",
-      renter: "กนกวรรณ สายชล",
-      phone: "089-000-1122",
-      startDate: "2025-10-22",
-      endDate: "2025-10-22",
-      pricePerDay: 280,
-      deposit: 500,
-      status: "รอชำระ",
-      note: "ขายเสื้อผ้า",
-    },
-    {
-      id: "BK-0003",
-      lotId: 5,
-      lotName: "ล็อตที่ 5",
-      zone: "B",
-      renter: "วีรชน แสงทอง",
-      phone: "086-555-4444",
-      startDate: "2025-10-27",
-      endDate: "2025-10-29",
-      pricePerDay: 350,
-      deposit: 500,
-      status: "ยกเลิก",
-      note: "เครื่องประดับ",
-    },
-  ]);
+// 🔗 Firebase
+import { db } from "../service/Firebase";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 
+export default function RentalCheck() {
+  // ---------- state ----------
+  const [rentalsRaw, setRentalsRaw] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -68,48 +30,129 @@ export default function RentalCheck() {
   const [showDetail, setShowDetail] = useState(false);
   const pageSize = 8;
 
+  // ---------- utils ----------
   const toTHB = (n) =>
     n?.toLocaleString("th-TH", { style: "currency", currency: "THB" });
 
-  // ✅ คำนวณค่ารวมและจำนวนวัน
-  const computedRentals = useMemo(
-    () =>
-      rentals.map((r) => {
-        const days =
-          1 +
-          Math.round(
-            (new Date(r.endDate) - new Date(r.startDate)) / (1000 * 60 * 60 * 24)
-          );
-        const rentTotal = days * r.pricePerDay;
-        const grandTotal = rentTotal + r.deposit;
-        return { ...r, days, rentTotal, grandTotal };
-      }),
-    [rentals]
-  );
+  const toDateString = (v) => {
+    // รองรับ Firestore Timestamp / Date / String (YYYY-MM-DD)
+    if (!v) return "";
+    try {
+      if (typeof v?.toDate === "function") {
+        const d = v.toDate();
+        return d.toISOString().slice(0, 10);
+      }
+      if (v instanceof Date) return v.toISOString().slice(0, 10);
+      if (typeof v === "string") return v.slice(0, 10);
+      return "";
+    } catch {
+      return "";
+    }
+  };
 
-  // ✅ ฟังก์ชันกรอง
+  // ---------- fetch Firestore ----------
+  useEffect(() => {
+    // ควรมีคอลเลกชันชื่อ "bookings"
+    const qRef = query(collection(db, "bookings"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(
+      qRef,
+      (snap) => {
+        const rows = snap.docs.map((doc) => {
+          const d = doc.data() || {};
+
+          // พยายามจับคู่ฟิลด์ที่อาจต่างชื่อกันเล็กน้อย
+          const startDate = toDateString(d.startDate || d.from || d.start);
+          const endDate = toDateString(d.endDate || d.to || d.end);
+          const pricePerDay = Number(d.pricePerDay ?? d.price ?? 0);
+          const deposit = Number(d.deposit ?? 0);
+
+          const lotName = d.lotName ?? d.lot ?? `ล็อตที่ ${d.lotId ?? "-"}`;
+          const zone = d.zone ?? "-";
+          const renter = d.renter ?? d.renterName ?? d.name ?? "-";
+          const phone = d.phone ?? d.tel ?? "-";
+          const status = d.status ?? "-"; // ✅ จะได้ "อนุมัติ" จาก Firestore
+          const note = d.note ?? d.remark ?? "";
+
+          // คำนวณวัน/ยอดรวม
+          const days =
+            startDate && endDate
+              ? 1 +
+                Math.round(
+                  (new Date(endDate) - new Date(startDate)) /
+                    (1000 * 60 * 60 * 24)
+                )
+              : 0;
+          const rentTotal = days * pricePerDay;
+          const grandTotal = rentTotal + deposit;
+
+          return {
+            id: d.code || d.bookingCode || doc.id,
+            lotId: d.lotId ?? null,
+            lotName,
+            zone,
+            renter,
+            phone,
+            startDate,
+            endDate,
+            pricePerDay,
+            deposit,
+            status,
+            note,
+            days,
+            rentTotal,
+            grandTotal,
+          };
+        });
+        setRentalsRaw(rows);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("bookings onSnapshot error:", err);
+        setLoading(false);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  // ---------- filter/search ----------
+  useEffect(() => setPage(1), [q, statusFilter]);
+
+  const computedRentals = rentalsRaw; // คำนวณแล้วตอน map ข้างบน
+
   const filtered = useMemo(() => {
-    const qLower = q.toLowerCase();
+    const qLower = q.trim().toLowerCase();
     return computedRentals.filter((r) => {
-      const matchQ =
-        !qLower ||
-        [r.id, r.lotName, r.zone, r.renter, r.phone, r.note]
-          .join(" ")
-          .toLowerCase()
-          .includes(qLower);
+      const hay = [r.id, r.lotName, r.zone, r.renter, r.phone, r.note]
+        .join(" ")
+        .toLowerCase();
+      const matchQ = !qLower || hay.includes(qLower);
       const matchStatus = !statusFilter || r.status === statusFilter;
       return matchQ && matchStatus;
     });
   }, [computedRentals, q, statusFilter]);
 
-  // ✅ รีเซ็ตหน้าเมื่อกรอง
-  useEffect(() => setPage(1), [q, statusFilter]);
-
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const badgeVariant = (status) =>
-    status === "ยืนยันแล้ว" ? "success" : status === "รอชำระ" ? "warning" : "secondary";
+  // ---------- view helpers ----------
+  const badgeVariant = (status) => {
+    switch (status) {
+      case "อนุมัติ":
+      case "ยืนยันแล้ว":
+        return "success";
+      case "รอชำระ":
+        return "warning";
+      case "ยกเลิก":
+        return "secondary";
+      default:
+        return "light";
+    }
+  };
+
+  // ---------- actions ----------
+  const handlePay = (record) => {
+  navigate(`/payments/${record.id}`); // ✅ ไปหน้าใหม่พร้อมส่ง booking id
+};
 
   return (
     <>
@@ -140,8 +183,9 @@ export default function RentalCheck() {
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
                   <option value="">ทั้งหมด</option>
-                  <option value="ยืนยันแล้ว">ยืนยันแล้ว</option>
+                  <option value="อนุมัติ">อนุมัติ</option>
                   <option value="รอชำระ">รอชำระ</option>
+                  <option value="ยืนยันแล้ว">ยืนยันแล้ว</option>
                   <option value="ยกเลิก">ยกเลิก</option>
                 </Form.Select>
               </Col>
@@ -162,13 +206,18 @@ export default function RentalCheck() {
           </Card.Body>
         </Card>
 
-        {/* ตารางแสดงผล */}
         <Card className="shadow-sm border-0 mt-3">
           <Card.Body>
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h5 className="m-0">ผลการค้นหา</h5>
               <small className="text-muted">
-                ทั้งหมด {filtered.length} รายการ • หน้า {page}/{totalPages}
+                {loading ? (
+                  <>
+                    กำลังโหลดข้อมูล… <Spinner animation="border" size="sm" />
+                  </>
+                ) : (
+                  <>ทั้งหมด {filtered.length} รายการ • หน้า {page}/{totalPages}</>
+                )}
               </small>
             </div>
 
@@ -186,7 +235,13 @@ export default function RentalCheck() {
                 </tr>
               </thead>
               <tbody>
-                {pageItems.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-4">
+                      <Spinner animation="border" role="status" />
+                    </td>
+                  </tr>
+                ) : pageItems.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center text-muted py-4">
                       ไม่พบข้อมูลที่ตรงเงื่อนไข
@@ -207,22 +262,37 @@ export default function RentalCheck() {
                       </td>
                       <td className="text-end">
                         {toTHB(r.rentTotal)}{" "}
-                        <small className="text-muted">(+มัดจำ {toTHB(r.deposit)})</small>
+                        <small className="text-muted">
+                          (+มัดจำ {toTHB(r.deposit)})
+                        </small>
                       </td>
                       <td className="text-center">
                         <Badge bg={badgeVariant(r.status)}>{r.status}</Badge>
                       </td>
                       <td className="text-center">
-                        <Button
-                          size="sm"
-                          variant="outline-primary"
-                          onClick={() => {
-                            setDetail(r);
-                            setShowDetail(true);
-                          }}
-                        >
-                          รายละเอียด
-                        </Button>
+                        <div className="d-flex gap-2 justify-content-center">
+                          <Button
+                            size="sm"
+                            variant="outline-primary"
+                            onClick={() => {
+                              setDetail(r);
+                              setShowDetail(true);
+                            }}
+                          >
+                            รายละเอียด
+                          </Button>
+
+                          {/* ✅ แสดงเฉพาะเมื่อสถานะจาก Firestore เป็น "อนุมัติ" */}
+                          {r.status === "อนุมัติ" && (
+                            <Button
+                              size="sm"
+                              variant="success"
+                              onClick={() => handlePay(r)}
+                            >
+                              ชำระเงิน
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -230,7 +300,7 @@ export default function RentalCheck() {
               </tbody>
             </Table>
 
-            {totalPages > 1 && (
+            {!loading && totalPages > 1 && (
               <div className="d-flex justify-content-center">
                 <Pagination className="m-0">
                   <Pagination.First onClick={() => setPage(1)} disabled={page === 1} />
@@ -262,7 +332,7 @@ export default function RentalCheck() {
         </Card>
       </Container>
 
-      {/* ✅ Modal รายละเอียด */}
+      {/* Modal รายละเอียด */}
       <Modal show={showDetail} onHide={() => setShowDetail(false)} centered size="lg">
         <Modal.Header closeButton>
           <Modal.Title>รายละเอียดการเช่า {detail ? `• ${detail.id}` : ""}</Modal.Title>
@@ -316,6 +386,12 @@ export default function RentalCheck() {
           )}
         </Modal.Body>
         <Modal.Footer>
+          {/* ถ้าสถานะเป็นอนุมัติ แสดงปุ่มชำระเงินในโมดอลด้วยก็ได้ */}
+          {detail?.status === "อนุมัติ" && (
+            <Button variant="success" onClick={() => handlePay(detail)}>
+              ชำระเงิน
+            </Button>
+          )}
           <Button variant="outline-secondary" onClick={() => setShowDetail(false)}>
             ปิด
           </Button>

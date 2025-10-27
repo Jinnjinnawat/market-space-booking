@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Container,
   Row,
@@ -8,69 +8,119 @@ import {
   Modal,
   Badge,
   ListGroup,
+  Spinner,
+  Alert,
 } from "react-bootstrap";
 import NavbarComponent from "../componnets/Navbar";
 import FromRegister from "../componnets/Formregister";
+import Footer from "../componnets/Footer";
+
+// 🔥 Firestore
+import {
+  collection,
+  onSnapshot,
+  addDoc,
+  serverTimestamp,
+  query,
+  orderBy,
+} from "firebase/firestore";
+import { db } from "../service/Firebase";
 
 // ✅ ตัวช่วยฟอร์แมตวันที่สั้น ๆ
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("th-TH") : "-");
 
-// ✅ ข้อมูลตั้งต้น (ย้ายออกมานอกคอมโพเนนต์)
-const initialLots = [
-  {
-    id: 1,
-    name: "ล็อตที่ 1",
-    status: "ว่าง",
-    size: "2x2 ม.",
-    pricePerDay: 300,
-    deposit: 500,
-    zone: "A",
-    amenities: ["ปลั๊กไฟ", "หลังคา", "ใกล้ทางเข้า"],
-    desc: "ทำเลดี เหมาะขายของกินและของแห้ง คนเดินผ่านเยอะ",
-    image: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
-    renters: [
-      { name: "คุณเอ็ม", phone: "08x-xxx-xxxx", from: "2025-10-01", to: "2025-10-10" },
-    ],
-  },
-  {
-    id: 2,
-    name: "ล็อตที่ 2",
-    status: "ถูกเช่าแล้ว",
-    size: "3x2 ม.",
-    pricePerDay: 350,
-    deposit: 500,
-    zone: "B",
-    amenities: ["ปลั๊กไฟ", "ใกล้ห้องน้ำ"],
-    desc: "เหมาะขายเสื้อผ้า/เครื่องประดับ",
-    image: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
-    renters: [
-      { name: "คุณเอ", phone: "08x-xxx-xxxx", from: "2025-10-20" },
-      { name: "คุณบี", phone: "09x-xxx-xxxx", from: "2025-10-15", to: "2025-10-18" },
-    ],
-  },
-  {
-    id: 3,
-    name: "ล็อตที่ 3",
-    status: "ว่าง",
-    size: "2x2 ม.",
-    pricePerDay: 280,
-    deposit: 500,
-    zone: "A",
-    amenities: ["ปลั๊กไฟ"],
-    desc: "ทำเลกลางตลาด มองเห็นชัดจากหลายทาง",
-    image: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
-    renters: [],
-  },
-];
-
 export default function Home() {
-  const [lots, setLots] = useState(initialLots);
+  // ---- state หลัก ----
+  const [lots, setLots] = useState([]);          // มาจาก /lots
+  const [bookings, setBookings] = useState([]);  // มาจาก /bookings
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
   const [showRegister, setShowRegister] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedLot, setSelectedLot] = useState(null);
 
   const toTHB = (n) =>
     n?.toLocaleString("th-TH", { style: "currency", currency: "THB" });
+
+  // ---- subscribe Firestore: /lots และ /bookings ----
+  useEffect(() => {
+    try {
+      const unsubLots = onSnapshot(
+        query(collection(db, "lots"), orderBy("name", "asc")),
+        (snap) => {
+          const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setLots(rows || []);
+          setLoading(false);
+        },
+        (e) => {
+          console.error(e);
+          setErr("โหลดรายการพื้นที่ไม่สำเร็จ");
+          setLoading(false);
+        }
+      );
+
+      const unsubBookings = onSnapshot(
+        query(collection(db, "bookings"), orderBy("from", "desc")),
+        (snap) => {
+          const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setBookings(rows || []);
+        },
+        (e) => {
+          console.error(e);
+          setErr("โหลดข้อมูลการจองไม่สำเร็จ");
+        }
+      );
+
+      return () => {
+        unsubLots?.();
+        unsubBookings?.();
+      };
+    } catch (e) {
+      console.error(e);
+      setErr("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
+      setLoading(false);
+    }
+  }, []);
+
+  // ---- รวม lots + bookings เป็น lotsWithRenters ----
+  const lotsWithRenters = useMemo(() => {
+    if (!lots.length) return [];
+    const today = new Date();
+
+    // group bookings by lotId
+    const byLot = bookings.reduce((acc, b) => {
+      const { lotId } = b;
+      if (!lotId) return acc;
+      acc[lotId] = acc[lotId] || [];
+      acc[lotId].push(b);
+      return acc;
+    }, {});
+
+    return lots.map((l) => {
+      const r = (byLot[l.id] || []).map((b) => ({
+        name: b.name || b.renterName || "-",
+        phone: b.phone || "-",
+        from: b.from || null,
+        to: b.to || null,
+        status: b.status || "pending",
+      }));
+
+      // คิดสถานะล็อตจากรายการที่ยัง active
+      const hasActive = (byLot[l.id] || []).some((b) => {
+        const to = b.to ? new Date(b.to) : null;
+        // active = ไม่มีวันสิ้นสุด หรือ to >= วันนี้ และ (ถ้ามีสถานะ) ไม่ใช่ cancelled
+        const notCancelled = (b.status || "").toLowerCase() !== "cancelled";
+        return notCancelled && (!to || to >= today);
+      });
+
+      return {
+        ...l,
+        renters: r,
+        status: hasActive ? "ถูกเช่าแล้ว" : (l.status || "ว่าง"),
+      };
+    });
+  }, [lots, bookings]);
 
   // ✅ ฟังก์ชันเลือกผู้เช่าปัจจุบัน (ยังเช่าอยู่ ณ วันนี้)
   const getActiveRenters = (lot) => {
@@ -82,16 +132,26 @@ export default function Home() {
     });
   };
 
-  // ✅ เพิ่มผู้เช่าลงในล็อต (ใช้ตอนบันทึกฟอร์ม)
-  const addRenterToLot = (lotId, renter) => {
-    setLots((prev) =>
-      prev.map((l) =>
-        l.id === lotId ? { ...l, renters: [...(l.renters || []), renter] } : l
-      )
-    );
+  // ✅ บันทึกเป็น booking ใหม่ไปที่ /bookings
+  const addBooking = async (lotId, renter) => {
+    // คาดหวังค่า: renter = { name, phone, from, to }
+    try {
+      await addDoc(collection(db, "bookings"), {
+        lotId,
+        name: renter.name,
+        phone: renter.phone || "",
+        from: renter.from || null,   // "YYYY-MM-DD"
+        to: renter.to || null,       // "YYYY-MM-DD" | null
+        status: "pending",           // หรือ "confirmed" ตาม flow ของคุณ
+        createdAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error(e);
+      setErr("บันทึกการลงทะเบียนไม่สำเร็จ");
+    }
   };
 
-  // เปิด/ปิดฟอร์มลงทะเบียน
+  // ---- modal handlers ----
   const openRegister = (lot) => {
     setSelectedLot(lot);
     setShowRegister(true);
@@ -101,7 +161,6 @@ export default function Home() {
     setSelectedLot(null);
   };
 
-  // เปิด/ปิดรายละเอียด
   const openDetails = (lot) => {
     setSelectedLot(lot);
     setShowDetails(true);
@@ -111,7 +170,6 @@ export default function Home() {
     setSelectedLot(null);
   };
 
-  // จาก modal รายละเอียด -> เปิดฟอร์มลงทะเบียน
   const rentFromDetails = () => {
     const lot = selectedLot;
     setShowDetails(false);
@@ -126,49 +184,54 @@ export default function Home() {
       <Container className="mt-4 mb-5">
         <h2 className="text-center mb-4">รายการพื้นที่ให้เช่า</h2>
 
-        <Row className="g-4 justify-content-center">
-          {lots.map((lot) => (
-            <Col key={lot.id} xs={12} sm={6} md={4}>
-              <Card className="shadow-sm text-center h-100 border-0">
-                <Card.Img
-                  variant="top"
-                  src={lot.image}
-                  className="p-3"
-                  style={{ width: "150px", margin: "0 auto" }}
-                  alt={lot.name}
-                />
-                <Card.Body>
-                  <Card.Title className="d-flex justify-content-center align-items-center gap-2">
-                    {lot.name}
-                    <Badge bg={lot.status === "ว่าง" ? "success" : "secondary"}>
-                      {lot.status}
-                    </Badge>
-                  </Card.Title>
+        {err && <Alert variant="danger" className="mb-3">{err}</Alert>}
 
-                  <Card.Text className="mb-2">
-                    <strong>ราคา:</strong> {toTHB(lot.pricePerDay)}/วัน
-                  </Card.Text>
-                  <Card.Text className="text-muted" style={{ minHeight: 48 }}>
-                    {lot.desc}
-                  </Card.Text>
+        {loading ? (
+          <div className="d-flex justify-content-center my-5">
+            <Spinner animation="border" role="status" />
+          </div>
+        ) : (
+          <Row className="g-4 justify-content-center">
+            {lotsWithRenters.map((lot) => (
+              <Col key={lot.id} xs={12} sm={6} md={4}>
+                <Card className="shadow-sm text-center h-100 border-0">
+                  <Card.Img
+                    variant="top"
+                    src={lot.image || "https://cdn-icons-png.flaticon.com/512/149/149071.png"}
+                    className="p-3"
+                    style={{ width: "150px", margin: "0 auto" }}
+                    alt={lot.name}
+                  />
+                  <Card.Body>
+                    <Card.Title className="d-flex justify-content-center align-items-center gap-2">
+                      {lot.name}
+                      <Badge bg={lot.status === "ว่าง" ? "success" : "secondary"}>
+                        {lot.status}
+                      </Badge>
+                    </Card.Title>
 
-                  <div className="d-flex justify-content-center gap-2">
-                    <Button variant="outline-primary" onClick={() => openDetails(lot)}>
-                      รายละเอียด
-                    </Button>
-                    {/* ✅ เปิดให้กดเสมอ เพื่อใช้เป็นการลงทะเบียนเข้าร่วมประมูล/คิวเช่า */}
-                    <Button
-                      variant="success"
-                      onClick={() => openRegister(lot)}
-                    >
-                      ลงทะเบียนเข้าร่วมประมูล
-                    </Button>
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
-          ))}
-        </Row>
+                    <Card.Text className="mb-2">
+                      <strong>ราคา:</strong>{" "}
+                      {toTHB(lot.pricePerDay) || "-"} /วัน
+                    </Card.Text>
+                    <Card.Text className="text-muted" style={{ minHeight: 48 }}>
+                      {lot.desc || "-"}
+                    </Card.Text>
+
+                    <div className="d-flex justify-content-center gap-2">
+                      <Button variant="outline-primary" onClick={() => openDetails(lot)}>
+                        รายละเอียด
+                      </Button>
+                      <Button variant="success" onClick={() => openRegister(lot)}>
+                        ลงทะเบียนเข้าร่วมประมูล
+                      </Button>
+                    </div>
+                  </Card.Body>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        )}
       </Container>
 
       {/* ✅ Modal: รายละเอียดการเช่า */}
@@ -184,7 +247,7 @@ export default function Home() {
             <Row className="g-3">
               <Col md={4} className="text-center">
                 <img
-                  src={selectedLot.image}
+                  src={selectedLot.image || "https://cdn-icons-png.flaticon.com/512/149/149071.png"}
                   alt={selectedLot.name}
                   style={{ width: "70%", maxWidth: 220 }}
                   className="mb-3"
@@ -199,16 +262,16 @@ export default function Home() {
               <Col md={8}>
                 <ListGroup variant="flush">
                   <ListGroup.Item>
-                    <strong>ขนาดพื้นที่:</strong> {selectedLot.size}
+                    <strong>ขนาดพื้นที่:</strong> {selectedLot.size || "-"}
                   </ListGroup.Item>
                   <ListGroup.Item>
-                    <strong>โซน:</strong> {selectedLot.zone}
+                    <strong>โซน:</strong> {selectedLot.zone || "-"}
                   </ListGroup.Item>
                   <ListGroup.Item>
-                    <strong>ราคา/วัน:</strong> {toTHB(selectedLot.pricePerDay)}
+                    <strong>ราคา/วัน:</strong> {toTHB(selectedLot.pricePerDay) || "-"}
                   </ListGroup.Item>
                   <ListGroup.Item>
-                    <strong>มัดจำ:</strong> {toTHB(selectedLot.deposit)}
+                    <strong>มัดจำ:</strong> {toTHB(selectedLot.deposit) || "-"}
                   </ListGroup.Item>
                   <ListGroup.Item>
                     <strong>สิ่งอำนวยความสะดวก:</strong>{" "}
@@ -217,7 +280,7 @@ export default function Home() {
                       : "-"}
                   </ListGroup.Item>
                   <ListGroup.Item>
-                    <strong>คำอธิบาย:</strong> {selectedLot.desc}
+                    <strong>คำอธิบาย:</strong> {selectedLot.desc || "-"}
                   </ListGroup.Item>
 
                   {/* ✅ ผู้เช่า (ปัจจุบัน) */}
@@ -250,10 +313,8 @@ export default function Home() {
                     {selectedLot.renters?.length ? (
                       <div className="mt-2">
                         {selectedLot.renters.map((r, i) => {
-                          // ตีความสถานะ
                           const today = new Date();
-                          const isActive =
-                            !r.to || new Date(r.to) >= today;
+                          const isActive = !r.to || new Date(r.to) >= today;
                           const statusText = !r.to
                             ? "ไม่กำหนดสิ้นสุด"
                             : isActive
@@ -314,18 +375,20 @@ export default function Home() {
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {/* สำคัญ: ส่ง onSave เพื่อให้ฟอร์มคืนข้อมูลผู้เช่า */}
+          {/* ส่ง onSave เพื่อให้ฟอร์มคืนข้อมูลผู้เช่า แล้วเขียนเข้า /bookings */}
           <FromRegister
             selectedLot={selectedLot}
             onClose={closeRegister}
-            onSave={(renter) => {
+            onSave={async (renter) => {
               if (!selectedLot) return;
-              addRenterToLot(selectedLot.id, renter);
+              await addBooking(selectedLot.id, renter);
               closeRegister();
             }}
           />
         </Modal.Body>
       </Modal>
+
+      <Footer />
     </>
   );
 }

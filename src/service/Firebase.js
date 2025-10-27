@@ -2,7 +2,8 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getFirestore } from "firebase/firestore"; // <-- เพิ่ม Firestore เข้ามา
+import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage"; // ✅ เพิ่มบรรทัดนี้
 
 // Firebase configuration ของโปรเจกต์คุณ
 const firebaseConfig = {
@@ -12,7 +13,7 @@ const firebaseConfig = {
   storageBucket: "rentalmaket.firebasestorage.app",
   messagingSenderId: "330360568491",
   appId: "1:330360568491:web:e41806ecf59703820515ee",
-  measurementId: "G-EB5VQNXFRZ"
+  measurementId: "G-EB5VQNXFRZ",
 };
 
 // Initialize Firebase
@@ -23,5 +24,8 @@ const analytics = getAnalytics(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// ✅ Export Firestore สำหรับ CRUD ข้อมูลตลาด
+// ✅ Export Firestore
 export const db = getFirestore(app);
+
+// ✅ Export Storage (แก้ให้ import ได้ใน PaymentPage)
+export const storage = getStorage(app);

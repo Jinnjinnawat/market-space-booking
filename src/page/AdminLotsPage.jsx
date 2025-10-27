@@ -44,7 +44,7 @@ const statusMeta = {
 // ---------- ฟอร์มเริ่มต้น ----------
 const emptyForm = {
   lotNo: "",
-  name: "",
+  // name: "",           // ❌ ตัดออกตามคำขอ
   zone: "",
   size: "",
   pricePerDay: "",
@@ -52,8 +52,8 @@ const emptyForm = {
   amenities: {
     electric: false,
     water: false,
-    roof: false,
-    nearGate: false,
+    // roof: false,      // ❌ ตัดออก
+    // nearGate: false,  // ❌ ตัดออก
   },
   notes: "",
 };
@@ -109,7 +109,7 @@ export default function AdminLotsPage() {
     const data = items.filter((x) => {
       const hitText =
         !t ||
-        [x.lotNo, x.name, x.zone, x.size, x.notes]
+        [x.lotNo, x.name, x.zone, x.size, x.notes] // x.name อาจไม่มีได้ ไม่เป็นไร
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
@@ -139,7 +139,7 @@ export default function AdminLotsPage() {
     setEditingId(row.id);
     setForm({
       lotNo: row.lotNo || "",
-      name: row.name || "",
+      // name: row.name || "",   // ❌ ตัดออกจากฟอร์ม
       zone: row.zone || "",
       size: row.size || "",
       pricePerDay: row.pricePerDay ?? "",
@@ -147,8 +147,8 @@ export default function AdminLotsPage() {
       amenities: {
         electric: !!row?.amenities?.electric,
         water: !!row?.amenities?.water,
-        roof: !!row?.amenities?.roof,
-        nearGate: !!row?.amenities?.nearGate,
+        // roof: !!row?.amenities?.roof,        // ❌ ไม่ใช้แล้ว
+        // nearGate: !!row?.amenities?.nearGate, // ❌ ไม่ใช้แล้ว
       },
       notes: row.notes || "",
     });
@@ -163,8 +163,9 @@ export default function AdminLotsPage() {
     e.preventDefault();
 
     // validate ง่าย ๆ
-    if (!form.lotNo || !form.name) {
-      pushToast("กรุณากรอก เลขที่ล็อต และ ชื่อล็อต", "warning");
+    if (!form.lotNo) {
+      // ❗ เอาเงื่อนไข name ออก
+      pushToast("กรุณากรอก เลขที่ล็อต", "warning");
       return;
     }
 
@@ -236,12 +237,11 @@ export default function AdminLotsPage() {
       <AdminSidebar />
 
       {/* ขวา: เนื้อหาหลัก */}
-     <div className="flex-grow-1" style={{ marginLeft: 260 }}>
+      <div className="flex-grow-1" style={{ marginLeft: 260 }}>
         <Container fluid className="py-4 px-4">
           <Row className="align-items-center mb-3">
             <Col>
               <h4 className="mb-0">จัดการพื้นที่ล็อตตลาด</h4>
-              
             </Col>
             <Col xs="auto">
               <Button onClick={handleOpenCreate}>+ เพิ่มพื้นที่ตลาด</Button>
@@ -339,22 +339,15 @@ export default function AdminLotsPage() {
                             น้ำประปา
                           </Badge>
                         )}
-                        {row?.amenities?.roof && (
-                          <Badge bg="secondary" className="me-1">
-                            หลังคา
-                          </Badge>
-                        )}
-                        {row?.amenities?.nearGate && (
-                          <Badge bg="warning" text="dark">
-                            ใกล้ประตู
-                          </Badge>
-                        )}
+                        {/* ❌ ตัด “หลังคา/ใกล้ประตู” ออกจากการแสดงผล */}
                         {!row?.amenities &&
+                          "-"}
+
+                        {/* ถ้าต้องการเช็ค “ไม่มีสิ่งอำนวยความสะดวกเลย” แบบเข้มงวด */}
+                        {row?.amenities &&
                           !row?.amenities?.electric &&
                           !row?.amenities?.water &&
-                          !row?.amenities?.roof &&
-                          !row?.amenities?.nearGate &&
-                          "-"}
+                          "-" }
                       </td>
                       <td>
                         <Badge bg={statusMeta[row.status]?.variant || "light"}>
@@ -416,17 +409,14 @@ export default function AdminLotsPage() {
                       required
                     />
                   </Col>
+
+                  {/* ❌ ตัด “ชื่อล็อต” ออกจากฟอร์ม
                   <Col md={8}>
                     <Form.Label>ชื่อล็อต *</Form.Label>
-                    <Form.Control
-                      value={form.name}
-                      onChange={(e) =>
-                        setForm((p) => ({ ...p, name: e.target.value }))
-                      }
-                      placeholder="เช่น ล็อตมุมตลาด"
-                      required
-                    />
+                    <Form.Control ... />
                   </Col>
+                  */}
+
                   <Col md={4}>
                     <Form.Label>โซน</Form.Label>
                     <Form.Control
@@ -448,7 +438,7 @@ export default function AdminLotsPage() {
                     />
                   </Col>
                   <Col md={4}>
-                    <Form.Label>ราคา/วัน (บาท)</Form.Label>
+                    <Form.Label>ราคา/เดือน (บาท)</Form.Label>
                     <Form.Control
                       type="number"
                       min={0}
@@ -495,20 +485,7 @@ export default function AdminLotsPage() {
                         checked={form.amenities.water}
                         onChange={(e) => setAmenity("water", e.target.checked)}
                       />
-                      <Form.Check
-                        type="checkbox"
-                        label="หลังคา"
-                        checked={form.amenities.roof}
-                        onChange={(e) => setAmenity("roof", e.target.checked)}
-                      />
-                      <Form.Check
-                        type="checkbox"
-                        label="ใกล้ประตู"
-                        checked={form.amenities.nearGate}
-                        onChange={(e) =>
-                          setAmenity("nearGate", e.target.checked)
-                        }
-                      />
+                      {/* ❌ ตัด “หลังคา / ใกล้ประตู” ออก */}
                     </div>
                   </Col>
                   <Col xs={12}>

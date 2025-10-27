@@ -1,7 +1,12 @@
-import { Container, Nav, Navbar, NavDropdown } from "react-bootstrap";
+// src/componnets/Navbar.jsx
+import { Container, Nav, Navbar } from "react-bootstrap";
 import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthProvider";
+import LogoutButton from "./LogoutButton";
 
 export default function NavbarComponent() {
+  const { user } = useAuth(); // ✅ ดึงข้อมูล user จาก context
+
   return (
     <Navbar bg="light" expand="lg" className="shadow-sm" sticky="top">
       <Container>
@@ -14,7 +19,7 @@ export default function NavbarComponent() {
             src="https://upload.wikimedia.org/wikipedia/th/thumb/5/51/Logo_ku_th.svg/1200px-Logo_ku_th.svg.png"
             alt="KU Logo"
             style={{
-              width: "40px", // ขนาดรูป
+              width: "40px",
               height: "40px",
               objectFit: "contain",
             }}
@@ -25,28 +30,41 @@ export default function NavbarComponent() {
         <Navbar.Toggle aria-controls="main-navbar" />
         <Navbar.Collapse id="main-navbar">
           <Nav className="me-auto">
-            <Nav.Link as={Link} to="/">หน้าหลัก</Nav.Link>
-            <Nav.Link as={Link} to="/home">เช่าพื้นที่</Nav.Link>
-            <Nav.Link as={Link} to="/rentalCheck">ตรวจสอบการเช่าพื้นที่</Nav.Link>
-
-            <NavDropdown title="เพิ่มเติม" id="basic-nav-dropdown">
-              <NavDropdown.Item as={Link} to="/contact">
-                ติดต่อเรา
-              </NavDropdown.Item>
-              <NavDropdown.Item as={Link} to="/faq">
-                คำถามที่พบบ่อย
-              </NavDropdown.Item>
-            </NavDropdown>
+            <Nav.Link as={Link} to="/">
+              หน้าหลัก
+            </Nav.Link>
+            <Nav.Link as={Link} to="/home">
+              เช่าพื้นที่
+            </Nav.Link>
+            <Nav.Link as={Link} to="/rentalCheck">
+              ตรวจสอบการเช่าพื้นที่
+            </Nav.Link>
           </Nav>
 
-          <Nav>
-            <Nav.Link
-              as={Link}
-              to="/login"
-              className="btn btn-outline-primary rounded-pill px-3"
-            >
-              เข้าสู่ระบบ
-            </Nav.Link>
+          {/* ---------- ส่วนขวา ---------- */}
+          <Nav className="align-items-center gap-2">
+            {user ? (
+              <>
+                {/* ✅ แสดงชื่อผู้ใช้ */}
+                <span className="me-2 text-dark fw-semibold">
+                  {user.displayName || user.email}
+                </span>
+
+                {/* ✅ ปุ่มออกจากระบบ */}
+                <LogoutButton
+                  className="btn btn-outline-danger rounded-pill px-3 py-1"
+                  size="sm"
+                />
+              </>
+            ) : (
+              <Nav.Link
+                as={Link}
+                to="/login"
+                className="btn btn-outline-primary rounded-pill px-3"
+              >
+                เข้าสู่ระบบ
+              </Nav.Link>
+            )}
           </Nav>
         </Navbar.Collapse>
       </Container>
