@@ -33,17 +33,28 @@ import { db } from "../service/Firebase";
 
 const SIDEBAR_WIDTH = 260;
 
-const statusVariant = (status) => {
-  switch (status) {
-    case "pending":
-      return "warning";
-    case "approved":
-      return "success";
-    case "cancelled":
-      return "secondary";
-    default:
-      return "light";
-  }
+// ✅ ฟังก์ชันช่วยแปลงสถานะสำหรับแสดงผล (UI)
+const statusText = (s) => {
+  const t = String(s || "").trim().toLowerCase();
+  if (t === "paid") return "ชำระเงิน";
+  if (t === "approved") return "อนุมัติ";
+  if (t === "cancelled") return "ยกเลิก";
+  if (t === "pending") return "รอชำระ";
+  return s || "-";
+};
+
+// ✅ เลือกสี Badge จาก “ข้อความสำหรับ UI”
+const statusVariant = (statusForView) => {
+  const s = String(statusForView || "").trim().toLowerCase();
+  if (s === "ชำระเงิน") return "success";
+  if (s === "อนุมัติ") return "success";
+  if (s === "รอชำระ") return "warning";
+  if (s === "ยกเลิก") return "secondary";
+  // เผื่อกรณีส่งค่าดิบเข้ามา
+  if (s === "paid" || s === "approved") return "success";
+  if (s === "pending") return "warning";
+  if (s === "cancelled") return "secondary";
+  return "light";
 };
 
 const fmtDate = (tsOrDate) => {
@@ -110,14 +121,18 @@ export default function RentalRequestsTable() {
         x.lotName ||
         x.lotId ||
         "-";
+      const rawStatus = String(x.status || "").trim().toLowerCase();
+      const displayStatus = statusText(x.status);
+
       return {
         id: x.id, // ใช้ docId เป็นเลขที่คำขอ
         renterName: x.name || "-",
         phone: x.phone || "-",
         lot: lotDisplay,               // ✅ แสดง lotNo จาก /lots ถ้ามี
-        zone: lotInfo?.zone || null,   // (ถ้าอยากแสดงคอลัมน์ zone ที่หลัง มีค่าเตรียมไว้)
+        zone: lotInfo?.zone || null,
         requestDate: x.createdAt || null,
-        status: x.status || "pending",
+        statusRaw: rawStatus,          // สำหรับเช็คเงื่อนไขปุ่ม ฯลฯ
+        status: displayStatus,         // สำหรับแสดงผลใน UI (paid -> ชำระเงิน)
         _raw: x,
       };
     });
@@ -137,7 +152,8 @@ export default function RentalRequestsTable() {
         it.renterName.toLowerCase().includes(q) ||
         it.phone.toLowerCase().includes(q) ||
         String(it.lot).toLowerCase().includes(q) ||
-        String(it.status).toLowerCase().includes(q)
+        String(it.status).toLowerCase().includes(q) || // ค้นหาตามข้อความ UI ได้ เช่น "ชำระเงิน"
+        String(it.statusRaw).toLowerCase().includes(q) // หรือสถานะดิบ เช่น paid
     );
   }, [items, queryText]);
 
@@ -149,7 +165,7 @@ export default function RentalRequestsTable() {
 
   useEffect(() => {
     if (page > totalPages) setPage(1);
-  }, [totalPages]);
+  }, [totalPages, page]);
 
   // ---------- อนุมัติ/ยกเลิก (อัปเดต Firestore) ----------
   const [confirm, setConfirm] = useState({ type: null, item: null });
@@ -201,9 +217,6 @@ export default function RentalRequestsTable() {
           <Row className="mb-3">
             <Col>
               <h4 className="fw-bold">จัดการคำขอเช่าพื้นที่</h4>
-              <div className="text-muted">
-                ดึงข้อมูลจาก <code>/bookings</code> และแสดง <code>lotNo</code> จาก <code>/lots</code>
-              </div>
             </Col>
           </Row>
 
@@ -214,7 +227,7 @@ export default function RentalRequestsTable() {
                   <InputGroup>
                     <InputGroup.Text>ค้นหา</InputGroup.Text>
                     <Form.Control
-                      placeholder="พิมพ์ รหัสคำขอ / ชื่อผู้เช่า / เบอร์ / ล็อต / สถานะ"
+                      placeholder="พิมพ์ รหัสคำขอ / ชื่อผู้เช่า / เบอร์ / ล็อต / สถานะ (เช่น ชำระเงิน, paid)"
                       value={queryText}
                       onChange={(e) => setQueryText(e.target.value)}
                     />
@@ -268,7 +281,7 @@ export default function RentalRequestsTable() {
                           </tr>
                         ) : (
                           paged.map((it) => {
-                            const isPending = it.status === "pending";
+                            const isPending = it.statusRaw === "pending" || it.statusRaw === "รอชำระ";
                             return (
                               <tr key={it.id}>
                                 <td className="fw-semibold text-nowrap">{it.id}</td>
@@ -285,7 +298,7 @@ export default function RentalRequestsTable() {
                                 <td className="text-nowrap">{it.lot}</td>
                                 <td className="text-nowrap">{fmtDate(it.requestDate)}</td>
                                 <td>
-                                  <Badge bg={statusVariant(it.status)} className="px-2 py-1 text-uppercase">
+                                  <Badge bg={statusVariant(it.status)} className="px-2 py-1">
                                     {it.status}
                                   </Badge>
                                 </td>
@@ -305,7 +318,7 @@ export default function RentalRequestsTable() {
                                     <Button
                                       variant="outline-danger"
                                       size="sm"
-                                      disabled={it.status === "cancelled"}
+                                      disabled={it.statusRaw === "cancelled" || it.status === "ยกเลิก"}
                                       onClick={() => openCancel(it)}
                                     >
                                       ยกเลิก

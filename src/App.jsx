@@ -16,6 +16,7 @@ import AuthProvider from "./context/AuthProvider";
 import ProtectedRoute from "./componnets/ProtectedRoute";
 import RentalRequestsTable from "./page/RentalRequestsTable";
 import PaymentPage from "./page/PaymentPage";
+import PaymentsPageAdmin from "./page/PaymentsPageAdmin";
 export default function App() {
   return (
     <AuthProvider>
@@ -30,7 +31,7 @@ export default function App() {
         <Route path="/rentalCheck" element={<RentalCheck />} />
         <Route path="/lots" element={<AdminLotsPage />} />
         <Route path="/requeststable" element={<RentalRequestsTable />} />
-
+        <Route path="/paymentspageadmin" element={<PaymentsPageAdmin  />} />
         <Route path="/payments/:id" element={<PaymentPage />} />
         {/* หน้า private (ต้องล็อกอินก่อน) */}
       </Routes>

@@ -276,20 +276,13 @@ export default function AdminAnnouncementsPage() {
       <Container className="py-4" style={{ marginLeft: 240 }}>
         <Row className="align-items-center g-2 mb-3">
           <Col md>
-            <h2 className="mb-0">📣 จัดการประกาศ (ผู้ดูแล)</h2>
+            <h2 className="mb-0">📣 จัดการประกาศ</h2>
            
           </Col>
           <Col md="auto">
             <ButtonGroup>
               <Button variant="primary" onClick={openCreate}>+ สร้างประกาศ</Button>
-              <Dropdown as={ButtonGroup}>
-                <Button variant="outline-secondary" onClick={exportCSV}>ส่งออก CSV</Button>
-                <Dropdown.Toggle split variant="outline-secondary" id="export" />
-                <Dropdown.Menu align="end">
-                  <Dropdown.Item onClick={exportCSV}>ดาวน์โหลด CSV</Dropdown.Item>
-                  <Dropdown.Item onClick={() => window.print()}>พิมพ์หน้า</Dropdown.Item>
-                </Dropdown.Menu>
-              </Dropdown>
+              
             </ButtonGroup>
           </Col>
         </Row>
@@ -314,17 +307,7 @@ export default function AdminAnnouncementsPage() {
             </Form.Select>
           </Col>
           <Col md={3}>
-            <Form.Check
-              type="switch"
-              id="subSwitch"
-              label="แจ้งเตือนผู้ใช้ (ตัวอย่าง)"
-              onChange={(e) =>
-                setToast({
-                  show: true,
-                  text: e.target.checked ? "เปิดการแจ้งเตือน (ตัวอย่าง)" : "ปิดการแจ้งเตือน (ตัวอย่าง)",
-                })
-              }
-            />
+          
           </Col>
         </Row>
 

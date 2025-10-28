@@ -295,7 +295,7 @@ export default function AdminLotsPage() {
                 <tr>
                   <th style={{ whiteSpace: "nowrap" }}>เลขที่ล็อต</th>
                   <th>รูป</th> {/* ✅ คอลัมน์ใหม่ */}
-                  <th>ชื่อล็อต</th>
+                
                   <th>โซน</th>
                   <th>ขนาด</th>
                   <th>ราคา/วัน</th>
@@ -346,7 +346,7 @@ export default function AdminLotsPage() {
                           "-"
                         )}
                       </td>
-                      <td>{row.name || "-"}</td>
+                   
                       <td>{row.zone || "-"}</td>
                       <td>{row.size || "-"}</td>
                       <td>

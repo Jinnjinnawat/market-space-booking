@@ -40,6 +40,17 @@ export default function RentalCheck() {
       ? n.toLocaleString("th-TH", { style: "currency", currency: "THB" })
       : "-";
 
+  // แปลงสถานะฝั่งแสดงผล (UI): paid -> ชำระเงิน
+  const statusText = (s) => {
+    const t = String(s || "").trim().toLowerCase();
+    if (t === "paid") return "ชำระเงิน";
+    // รองรับสองภาษาสำคัญอื่น ๆ ตามเดิม
+    if (t === "approved") return "อนุมัติ";
+    if (t === "cancelled") return "ยกเลิก";
+    if (t === "pending") return "รอชำระ";
+    return s || "-";
+  };
+
   // ---------- fetch Firestore ----------
   // 1) lots
   useEffect(() => {
@@ -102,9 +113,10 @@ export default function RentalCheck() {
 
       const deposit = Number(b.deposit ?? lot.deposit ?? 0);
 
-      // สถานะ normalize ให้เทียบได้ทั้งไทย/อังกฤษ
+      // เก็บสถานะดิบ (ใช้เช็คเงื่อนไข/ปุ่ม)
       const statusRaw = String(b.status || "").trim().toLowerCase();
-      const statusDisplay = b.status ?? "-";
+      // สถานะที่ใช้ “แสดงผล” (มีการแปลง paid -> ชำระเงิน)
+      const statusDisplay = statusText(b.status ?? "-");
 
       return {
         id: b.code || b.bookingCode || b.id,
@@ -113,10 +125,10 @@ export default function RentalCheck() {
         zone,
         renter: b.renter ?? b.renterName ?? b.name ?? "-",
         phone: b.phone ?? b.tel ?? "-",
-        pricePerMonth, // ✅ ใช้แสดงในตาราง/โมดอล
+        pricePerMonth,
         deposit,
-        statusDisplay,
-        statusRaw,
+        statusDisplay, // ← ใช้โชว์
+        statusRaw,     // ← ใช้เช็คเงื่อนไข
         note: b.note ?? b.remark ?? "",
       };
     });
@@ -137,8 +149,11 @@ export default function RentalCheck() {
       const matchStatus =
         !sf ||
         r.statusRaw === sf ||
+        // จับคู่สองภาษา
         (sf === "อนุมัติ" && r.statusRaw === "approved") ||
-        (sf === "approved" && r.statusRaw === "อนุมัติ");
+        (sf === "approved" && r.statusRaw === "อนุมัติ") ||
+        (sf === "ชำระเงิน" && r.statusRaw === "paid") ||
+        (sf === "paid" && r.statusRaw === "ชำระเงิน");
 
       return matchQ && matchStatus;
     });
@@ -148,11 +163,17 @@ export default function RentalCheck() {
   const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   // ---------- view helpers ----------
-  const badgeVariant = (statusText) => {
-    const s = String(statusText || "").toLowerCase();
-    if (s === "approved" || s === "อนุมัติ" || s === "ยืนยันแล้ว") return "success";
-    if (s === "pending" || s === "รอชำระ") return "warning";
-    if (s === "cancelled" || s === "ยกเลิก") return "secondary";
+  const badgeVariant = (statusTextForView) => {
+    const s = String(statusTextForView || "").toLowerCase();
+    // ถือว่าข้อความสำหรับ UI แล้ว: “ชำระเงิน”, “อนุมัติ”, ฯลฯ
+    if (s === "ชำระเงิน") return "success";
+    if (s === "อนุมัติ" || s === "ยืนยันแล้ว") return "success";
+    if (s === "รอชำระ") return "warning";
+    if (s === "ยกเลิก") return "secondary";
+    // เผื่อกรณีส่งดิบเข้ามา
+    if (s === "paid" || s === "approved") return "success";
+    if (s === "pending") return "warning";
+    if (s === "cancelled") return "secondary";
     return "light";
   };
 
@@ -195,6 +216,9 @@ export default function RentalCheck() {
                   <option value="รอชำระ">รอชำระ</option>
                   <option value="ยืนยันแล้ว">ยืนยันแล้ว</option>
                   <option value="ยกเลิก">ยกเลิก</option>
+                  {/* ✅ เพิ่มตัวเลือก “ชำระเงิน” และ “paid” */}
+                  <option value="ชำระเงิน">ชำระเงิน</option>
+                  <option value="paid">paid</option>
                 </Form.Select>
               </Col>
 
@@ -235,11 +259,10 @@ export default function RentalCheck() {
                   <th>เลขที่เช่า</th>
                   <th>ล็อต (lotNo)</th>
                   <th>โซน</th>
-                  {/* ✅ เปลี่ยนเป็นราคา/เดือน */}
+                  {/* ✅ ราคา/เดือน */}
                   <th className="text-end">ราคา/เดือน</th>
                   <th>ผู้เช่า</th>
-                  {/* ❌ เอาช่วงเช่าออก */}
-                  {/* ❌ เอารวมค่าเช่าออก */}
+                  {/* ❌ เอาช่วงเช่าออก / ❌ เอารวมค่าเช่าออก */}
                   <th className="text-center">สถานะ</th>
                   <th className="text-center">จัดการ</th>
                 </tr>
@@ -263,7 +286,6 @@ export default function RentalCheck() {
                       <td>{r.id}</td>
                       <td>{r.lotNo}</td>
                       <td>{r.zone}</td>
-                      {/* ✅ แสดงราคา/เดือน */}
                       <td className="text-end">{toTHB(r.pricePerMonth)}</td>
                       <td>
                         <div>{r.renter}</div>
@@ -271,7 +293,7 @@ export default function RentalCheck() {
                       </td>
                       <td className="text-center">
                         <Badge bg={badgeVariant(r.statusDisplay)}>
-                          {r.statusDisplay}
+                          {statusText(r.statusDisplay)}
                         </Badge>
                       </td>
                       <td className="text-center">
@@ -288,7 +310,8 @@ export default function RentalCheck() {
                           </Button>
 
                           {(r.statusRaw === "approved" ||
-                            r.statusRaw === "อนุมัติ") && (
+                            r.statusRaw === "อนุมัติ" ||
+                            r.statusRaw === "รอชำระ") && (
                             <Button
                               size="sm"
                               variant="success"
@@ -297,6 +320,7 @@ export default function RentalCheck() {
                               ชำระเงิน
                             </Button>
                           )}
+                          {/* ถ้าจ่ายแล้ว (paid) จะไม่แสดงปุ่มชำระเงิน */}
                         </div>
                       </td>
                     </tr>
@@ -375,7 +399,7 @@ export default function RentalCheck() {
                   <dt className="col-5">สถานะ</dt>
                   <dd className="col-7">
                     <Badge bg={badgeVariant(detail.statusDisplay)}>
-                      {detail.statusDisplay}
+                      {statusText(detail.statusDisplay)}
                     </Badge>
                   </dd>
 
@@ -387,7 +411,9 @@ export default function RentalCheck() {
           )}
         </Modal.Body>
         <Modal.Footer>
-          {(detail?.statusRaw === "approved" || detail?.statusRaw === "อนุมัติ") && (
+          {(detail?.statusRaw === "approved" ||
+            detail?.statusRaw === "อนุมัติ" ||
+            detail?.statusRaw === "รอชำระ") && (
             <Button variant="success" onClick={() => handlePay(detail)}>
               ชำระเงิน
             </Button>
