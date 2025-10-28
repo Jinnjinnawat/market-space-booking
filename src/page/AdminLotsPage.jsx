@@ -52,9 +52,8 @@ const emptyForm = {
   amenities: {
     electric: false,
     water: false,
-    // roof: false,      // ❌ ตัดออก
-    // nearGate: false,  // ❌ ตัดออก
   },
+  imageUrl: "", // ✅ เพิ่มช่องลิงก์รูป
   notes: "",
 };
 
@@ -109,7 +108,7 @@ export default function AdminLotsPage() {
     const data = items.filter((x) => {
       const hitText =
         !t ||
-        [x.lotNo, x.name, x.zone, x.size, x.notes] // x.name อาจไม่มีได้ ไม่เป็นไร
+        [x.lotNo, x.name, x.zone, x.size, x.notes]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
@@ -139,17 +138,15 @@ export default function AdminLotsPage() {
     setEditingId(row.id);
     setForm({
       lotNo: row.lotNo || "",
-      // name: row.name || "",   // ❌ ตัดออกจากฟอร์ม
       zone: row.zone || "",
       size: row.size || "",
-      pricePerDay: row.pricePerDay ?? "",
+      pricePerMonth: row.pricePerMonth ?? "",
       status: row.status || "available",
       amenities: {
         electric: !!row?.amenities?.electric,
         water: !!row?.amenities?.water,
-        // roof: !!row?.amenities?.roof,        // ❌ ไม่ใช้แล้ว
-        // nearGate: !!row?.amenities?.nearGate, // ❌ ไม่ใช้แล้ว
       },
+      imageUrl: row.imageUrl || "", // ✅ โหลดค่ารูปเดิม
       notes: row.notes || "",
     });
     setShowModal(true);
@@ -162,27 +159,28 @@ export default function AdminLotsPage() {
   const onSubmit = async (e) => {
     e.preventDefault();
 
-    // validate ง่าย ๆ
     if (!form.lotNo) {
-      // ❗ เอาเงื่อนไข name ออก
       pushToast("กรุณากรอก เลขที่ล็อต", "warning");
       return;
     }
 
+    // เตรียมข้อมูลก่อนบันทึก
+    const payload = {
+      ...form,
+      imageUrl: (form.imageUrl || "").trim(), // ✅ ตัดช่องว่างหัว-ท้าย
+      pricePerDay: form.pricePerDay === "" ? null : Number(form.pricePerDay),
+    };
+
     try {
       if (editingId) {
         await updateDoc(doc(db, "lots", editingId), {
-          ...form,
-          pricePerDay:
-            form.pricePerDay === "" ? null : Number(form.pricePerDay),
+          ...payload,
           updatedAt: serverTimestamp(),
         });
         pushToast("บันทึกการแก้ไขสำเร็จ");
       } else {
         await addDoc(collection(db, "lots"), {
-          ...form,
-          pricePerDay:
-            form.pricePerDay === "" ? null : Number(form.pricePerDay),
+          ...payload,
           status: form.status || "available",
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -296,6 +294,7 @@ export default function AdminLotsPage() {
               <thead className="table-light">
                 <tr>
                   <th style={{ whiteSpace: "nowrap" }}>เลขที่ล็อต</th>
+                  <th>รูป</th> {/* ✅ คอลัมน์ใหม่ */}
                   <th>ชื่อล็อต</th>
                   <th>โซน</th>
                   <th>ขนาด</th>
@@ -308,13 +307,13 @@ export default function AdminLotsPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-4">
+                    <td colSpan={9} className="text-center py-4">
                       <Spinner animation="border" size="sm" /> กำลังโหลด...
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-4 text-muted">
+                    <td colSpan={9} className="text-center py-4 text-muted">
                       ไม่พบข้อมูล
                     </td>
                   </tr>
@@ -322,11 +321,36 @@ export default function AdminLotsPage() {
                   filtered.map((row) => (
                     <tr key={row.id}>
                       <td className="fw-semibold">{row.lotNo || "-"}</td>
+                      <td style={{ width: 72 }}>
+                        {row.imageUrl ? (
+                          <img
+                            src={row.imageUrl}
+                            alt={row.lotNo || "lot-img"}
+                            style={{
+                              width: 60,
+                              height: 60,
+                              objectFit: "cover",
+                              borderRadius: 8,
+                              border: "1px solid #eee",
+                            }}
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src =
+                                "data:image/svg+xml;charset=UTF-8," +
+                                encodeURIComponent(
+                                  `<svg xmlns='http://www.w3.org/2000/svg' width='60' height='60'><rect width='100%' height='100%' fill='#f3f3f3'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#bbb' font-size='10'>no img</text></svg>`
+                                );
+                            }}
+                          />
+                        ) : (
+                          "-"
+                        )}
+                      </td>
                       <td>{row.name || "-"}</td>
                       <td>{row.zone || "-"}</td>
                       <td>{row.size || "-"}</td>
                       <td>
-                        {row.pricePerDay != null ? THB(row.pricePerDay) : "-"}
+                        {row.pricePerMonth != null ? THB(row.pricePerMonth) : "-"}
                       </td>
                       <td style={{ whiteSpace: "nowrap" }}>
                         {row?.amenities?.electric && (
@@ -339,15 +363,11 @@ export default function AdminLotsPage() {
                             น้ำประปา
                           </Badge>
                         )}
-                        {/* ❌ ตัด “หลังคา/ใกล้ประตู” ออกจากการแสดงผล */}
-                        {!row?.amenities &&
-                          "-"}
-
-                        {/* ถ้าต้องการเช็ค “ไม่มีสิ่งอำนวยความสะดวกเลย” แบบเข้มงวด */}
+                        {!row?.amenities && "-"}
                         {row?.amenities &&
                           !row?.amenities?.electric &&
                           !row?.amenities?.water &&
-                          "-" }
+                          "-"}
                       </td>
                       <td>
                         <Badge bg={statusMeta[row.status]?.variant || "light"}>
@@ -410,13 +430,6 @@ export default function AdminLotsPage() {
                     />
                   </Col>
 
-                  {/* ❌ ตัด “ชื่อล็อต” ออกจากฟอร์ม
-                  <Col md={8}>
-                    <Form.Label>ชื่อล็อต *</Form.Label>
-                    <Form.Control ... />
-                  </Col>
-                  */}
-
                   <Col md={4}>
                     <Form.Label>โซน</Form.Label>
                     <Form.Control
@@ -437,24 +450,61 @@ export default function AdminLotsPage() {
                       placeholder="เช่น 2x3 ม."
                     />
                   </Col>
+
                   <Col md={4}>
                     <Form.Label>ราคา/เดือน (บาท)</Form.Label>
                     <Form.Control
                       type="number"
                       min={0}
-                      value={form.pricePerDay}
+                      value={form.pricePerMonth}
                       onChange={(e) =>
                         setForm((p) => ({
                           ...p,
-                          pricePerDay:
-                            e.target.value === ""
-                              ? ""
-                              : Number(e.target.value),
+                          pricePerMonth:
+                            e.target.value === "" ? "" : Number(e.target.value),
                         }))
                       }
                       placeholder="เช่น 300"
                     />
                   </Col>
+
+                  <Col md={8}>
+                    <Form.Label>ลิงก์รูปภาพ</Form.Label> {/* ✅ ช่องกรอกลิงก์รูป */}
+                    <Form.Control
+                      type="url"
+                      value={form.imageUrl}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, imageUrl: e.target.value }))
+                      }
+                      placeholder="เช่น https://.../image.jpg"
+                    />
+                    {/* ✅ พรีวิวรูปทันที */}
+                    {form.imageUrl?.trim() && (
+                      <div className="mt-2">
+                        <div className="small text-muted mb-1">พรีวิวรูป</div>
+                        <img
+                          src={form.imageUrl.trim()}
+                          alt="preview"
+                          style={{
+                            width: "100%",
+                            maxHeight: 180,
+                            objectFit: "cover",
+                            borderRadius: 8,
+                            border: "1px solid #eee",
+                          }}
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src =
+                              "data:image/svg+xml;charset=UTF-8," +
+                              encodeURIComponent(
+                                `<svg xmlns='http://www.w3.org/2000/svg' width='600' height='180'><rect width='100%' height='100%' fill='#f3f3f3'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#bbb' font-size='14'>ไม่สามารถแสดงรูปจากลิงก์นี้</text></svg>`
+                              );
+                          }}
+                        />
+                      </div>
+                    )}
+                  </Col>
+
                   <Col md={6}>
                     <Form.Label>สถานะ</Form.Label>
                     <Form.Select
@@ -485,7 +535,6 @@ export default function AdminLotsPage() {
                         checked={form.amenities.water}
                         onChange={(e) => setAmenity("water", e.target.checked)}
                       />
-                      {/* ❌ ตัด “หลังคา / ใกล้ประตู” ออก */}
                     </div>
                   </Col>
                   <Col xs={12}>

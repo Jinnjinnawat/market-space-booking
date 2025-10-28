@@ -1,15 +1,7 @@
+// src/page/PaymentPage.jsx
 import { useEffect, useState } from "react";
 import {
-  Badge,
-  Button,
-  Card,
-  Col,
-  Container,
-  Form,
-  Image,
-  Row,
-  Spinner,
-  Toast,
+  Button, Card, Col, Container, Form, Image, Row, Spinner, Toast,
 } from "react-bootstrap";
 import { useParams, useNavigate } from "react-router-dom";
 import NavbarComponent from "../componnets/Navbar";
@@ -20,33 +12,46 @@ import {
   getDoc,
   updateDoc,
   serverTimestamp,
+  addDoc,
+  collection,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 export default function PaymentPage() {
-  const { id } = useParams(); // รับ bookingId จาก URL เช่น /payments/BK-0001
+  const { id } = useParams(); // /payments/:id (id = booking doc id)
   const navigate = useNavigate();
 
-  const [booking, setBooking] = useState(null);
+  const [booking, setBooking] = useState(null); // data จาก /bookings/{id}
+  const [lot, setLot] = useState(null);         // data จาก /lots/{lotId}
   const [loading, setLoading] = useState(true);
-  const [method, setMethod] = useState(""); // card, transfer, cash
+
+  const [method, setMethod] = useState(""); // card | transfer | cash
   const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
 
   const toTHB = (n) =>
-    n?.toLocaleString("th-TH", { style: "currency", currency: "THB" });
+    typeof n === "number"
+      ? n.toLocaleString("th-TH", { style: "currency", currency: "THB" })
+      : "-";
 
-  // ✅ โหลดข้อมูลการจองจาก Firestore
+  // ✅ โหลดข้อมูลจาก /bookings/{id} แล้วตามด้วย /lots/{lotId}
   useEffect(() => {
     const load = async () => {
       try {
-        const snap = await getDoc(doc(db, "bookings", id));
-        if (snap.exists()) {
-          const d = snap.data();
-          setBooking(d);
-        } else {
+        const bSnap = await getDoc(doc(db, "bookings", id));
+        if (!bSnap.exists()) {
           setToast({ type: "error", msg: "ไม่พบข้อมูลการจองนี้" });
+          setLoading(false);
+          return;
+        }
+        const b = { id: bSnap.id, ...bSnap.data() };
+        setBooking(b);
+
+        // ถ้ามี lotId ให้โหลดข้อมูลล็อต
+        if (b.lotId) {
+          const lSnap = await getDoc(doc(db, "lots", b.lotId));
+          if (lSnap.exists()) setLot({ id: lSnap.id, ...lSnap.data() });
         }
       } catch (e) {
         console.error(e);
@@ -58,41 +63,61 @@ export default function PaymentPage() {
     load();
   }, [id]);
 
-  // ✅ อัปโหลดสลิป (กรณีโอนเงิน)
+  // ✅ ยอดชำระ = pricePerMonth จาก bookings (ถ้าไม่มี ค่อย fallback จาก lots)
+  const monthlyAmount = Number(
+    booking?.pricePerMonth ?? lot?.pricePerMonth ?? 0
+  );
+
+  // ✅ อัปโหลดสลิป (เฉพาะโอน)
   const uploadSlip = async () => {
     if (!file) return null;
     const storageRef = ref(storage, `payment_slips/${id}_${file.name}`);
     await uploadBytes(storageRef, file);
-    const url = await getDownloadURL(storageRef);
-    return url;
+    return await getDownloadURL(storageRef);
   };
 
-  // ✅ กดยืนยันการชำระเงิน
+  // ✅ ยืนยันการชำระ: เพิ่มเอกสารใน /payments และอัปเดต /bookings/{id} เป็น 'paid'
   const handleSubmit = async () => {
     if (!method) {
       setToast({ type: "error", msg: "กรุณาเลือกวิธีชำระเงิน" });
       return;
     }
+    if (method === "transfer" && !file) {
+      setToast({ type: "error", msg: "โปรดแนบสลิปโอนเงิน" });
+      return;
+    }
 
     try {
       setSubmitting(true);
-      let slipUrl = null;
-      if (method === "transfer" && file) {
-        slipUrl = await uploadSlip();
-      }
+      const slipUrl = method === "transfer" ? await uploadSlip() : null;
 
-      const bookingRef = doc(db, "bookings", id);
-      await updateDoc(bookingRef, {
+      // 1) บันทึกไปที่ /payments
+      const paymentData = {
+        bookingId: id,
+        lotId: booking?.lotId || null,
+        lotName: lot?.name || lot?.lotNo || "",
+        renterName: booking?.name || "",
+        phone: booking?.phone || "",
+        amount: monthlyAmount,
+        currency: "THB",
+        method,                // card | transfer | cash
+        slipUrl: slipUrl || null,
+        createdAt: serverTimestamp(),
+        paidAt: serverTimestamp(),
+      };
+      await addDoc(collection(db, "payments"), paymentData);
+
+      // 2) อัปเดตสถานะใน /bookings/{id} เป็นภาษาอังกฤษ: 'paid'
+      await updateDoc(doc(db, "bookings", id), {
+        status: "paid",
         paymentMethod: method,
         paymentSlip: slipUrl || null,
+        paymentAmount: monthlyAmount,
         paymentDate: serverTimestamp(),
-        status: "รออนุมัติการชำระ", // ✅ ปรับสถานะ
       });
 
       setToast({ type: "success", msg: "บันทึกการชำระเงินเรียบร้อย!" });
-
-      // กลับหน้าหลักหลังจาก 2 วิ
-      setTimeout(() => navigate("/rentalCheck"), 2000);
+      setTimeout(() => navigate("/home"), 1500);
     } catch (e) {
       console.error(e);
       setToast({ type: "error", msg: "บันทึกไม่สำเร็จ กรุณาลองใหม่" });
@@ -115,8 +140,6 @@ export default function PaymentPage() {
       </Container>
     );
 
-  const total = (booking.total ?? booking.grandTotal) || 0;
-
   return (
     <>
       <NavbarComponent />
@@ -124,25 +147,25 @@ export default function PaymentPage() {
         <Card className="shadow-sm border-0">
           <Card.Body>
             <h4 className="mb-3">ชำระเงินสำหรับการจอง #{id}</h4>
+
             <Row>
               <Col md={6}>
                 <dl className="row mb-0">
                   <dt className="col-5">ชื่อผู้เช่า</dt>
-                  <dd className="col-7">{booking.renterName || booking.renter}</dd>
+                  <dd className="col-7">{booking.name || "-"}</dd>
+
+                  <dt className="col-5">เบอร์โทร</dt>
+                  <dd className="col-7">{booking.phone || "-"}</dd>
 
                   <dt className="col-5">ล็อต / โซน</dt>
                   <dd className="col-7">
-                    {booking.lotName || "-"} / {booking.zone || "-"}
-                  </dd>
-
-                  <dt className="col-5">ช่วงเช่า</dt>
-                  <dd className="col-7">
-                    {booking.startDate} → {booking.endDate}
+                    {(lot?.lotNo || lot?.name || `ล็อต ${booking.lotId ?? "-"}`)} /{" "}
+                    {lot?.zone || "-"}
                   </dd>
 
                   <dt className="col-5">ยอดที่ต้องชำระ</dt>
                   <dd className="col-7 fw-bold text-success">
-                    {toTHB(total)}
+                    {toTHB(monthlyAmount)}
                   </dd>
                 </dl>
               </Col>
@@ -243,11 +266,7 @@ export default function PaymentPage() {
             </Form>
 
             <div className="text-end">
-              <Button
-                variant="success"
-                disabled={submitting}
-                onClick={handleSubmit}
-              >
+              <Button variant="success" disabled={submitting} onClick={handleSubmit}>
                 {submitting ? (
                   <>
                     <Spinner animation="border" size="sm" /> กำลังบันทึก...
@@ -261,12 +280,9 @@ export default function PaymentPage() {
         </Card>
       </Container>
 
-      {/* ✅ Toast แจ้งผล */}
+      {/* ✅ Toast */}
       {toast && (
-        <div
-          className="position-fixed bottom-0 end-0 p-3"
-          style={{ zIndex: 1100 }}
-        >
+        <div className="position-fixed bottom-0 end-0 p-3" style={{ zIndex: 1100 }}>
           <Toast
             bg={toast.type === "error" ? "danger" : "success"}
             onClose={() => setToast(null)}

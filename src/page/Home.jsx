@@ -1,3 +1,4 @@
+// src/page/Home.jsx
 import { useEffect, useMemo, useState } from "react";
 import {
   Container,
@@ -29,10 +30,42 @@ import { db } from "../service/Firebase";
 // ✅ ตัวช่วยฟอร์แมตวันที่สั้น ๆ
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("th-TH") : "-");
 
+// ✅ แปลงฟิลด์ Firestore → ฟิลด์สำหรับ UI
+const normalizeLot = (l) => {
+  // แปลง amenities object → array (เก็บเฉพาะ key ที่เป็น true)
+  const amenitiesArr = Array.isArray(l.amenities)
+    ? l.amenities
+    : Object.entries(l.amenities || {})
+        .filter(([, v]) => !!v)
+        .map(([k]) => k);
+
+  // แปลงสถานะอังกฤษ → ไทย (ถ้าเป็นไทยอยู่แล้วก็ผ่าน)
+  const statusTH =
+    l.status === "available"
+      ? "ว่าง"
+      : l.status === "occupied"
+      ? "ถูกเช่า"
+      : l.status === "inactive"
+      ? "ปิดใช้งาน"
+      : l.status || "ว่าง";
+
+  return {
+    ...l,
+    // ใช้ lotNo เป็นชื่อการ์ดถ้าไม่มี name
+    name: l.name || l.lotNo || l.lot || "-",
+    // รองรับทั้ง image และ imageUrl
+    image: l.image || l.imageUrl || "",
+    // รองรับทั้ง desc และ notes
+    desc: l.desc || l.notes || "",
+    amenities: amenitiesArr,
+    status: statusTH,
+  };
+};
+
 export default function Home() {
   // ---- state หลัก ----
-  const [lots, setLots] = useState([]);          // มาจาก /lots
-  const [bookings, setBookings] = useState([]);  // มาจาก /bookings
+  const [lots, setLots] = useState([]);          // /lots (normalize แล้ว)
+  const [bookings, setBookings] = useState([]);  // /bookings
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
@@ -41,16 +74,21 @@ export default function Home() {
   const [selectedLot, setSelectedLot] = useState(null);
 
   const toTHB = (n) =>
-    n?.toLocaleString("th-TH", { style: "currency", currency: "THB" });
+    typeof n === "number"
+      ? n.toLocaleString("th-TH", { style: "currency", currency: "THB" })
+      : n
+      ? `${n}` // ถ้าเป็น string เช่นใส่มาเป็น "1000"
+      : undefined;
 
   // ---- subscribe Firestore: /lots และ /bookings ----
   useEffect(() => {
     try {
+      // ✅ ใช้ฟิลด์ที่มีจริง (คาดว่า lots มี createdAt)
       const unsubLots = onSnapshot(
-        query(collection(db, "lots"), orderBy("name", "asc")),
+        query(collection(db, "lots"), orderBy("createdAt", "desc")),
         (snap) => {
           const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-          setLots(rows || []);
+          setLots(rows.map(normalizeLot));
           setLoading(false);
         },
         (e) => {
@@ -92,8 +130,7 @@ export default function Home() {
     const byLot = bookings.reduce((acc, b) => {
       const { lotId } = b;
       if (!lotId) return acc;
-      acc[lotId] = acc[lotId] || [];
-      acc[lotId].push(b);
+      (acc[lotId] ||= []).push(b);
       return acc;
     }, {});
 
@@ -109,7 +146,6 @@ export default function Home() {
       // คิดสถานะล็อตจากรายการที่ยัง active
       const hasActive = (byLot[l.id] || []).some((b) => {
         const to = b.to ? new Date(b.to) : null;
-        // active = ไม่มีวันสิ้นสุด หรือ to >= วันนี้ และ (ถ้ามีสถานะ) ไม่ใช่ cancelled
         const notCancelled = (b.status || "").toLowerCase() !== "cancelled";
         return notCancelled && (!to || to >= today);
       });
@@ -117,12 +153,12 @@ export default function Home() {
       return {
         ...l,
         renters: r,
-        status: hasActive ? "ถูกเช่าแล้ว" : (l.status || "ว่าง"),
+        status: hasActive ? "ถูกเช่า" : l.status, // ถ้ากำลังเช่าอยู่ให้ขึ้น "ถูกเช่า"
       };
     });
   }, [lots, bookings]);
 
-  // ✅ ฟังก์ชันเลือกผู้เช่าปัจจุบัน (ยังเช่าอยู่ ณ วันนี้)
+  // ✅ เลือกผู้เช่าปัจจุบัน (ยังเช่าอยู่ ณ วันนี้)
   const getActiveRenters = (lot) => {
     if (!lot?.renters?.length) return [];
     const today = new Date();
@@ -132,24 +168,31 @@ export default function Home() {
     });
   };
 
-  // ✅ บันทึกเป็น booking ใหม่ไปที่ /bookings
-  const addBooking = async (lotId, renter) => {
-    // คาดหวังค่า: renter = { name, phone, from, to }
-    try {
-      await addDoc(collection(db, "bookings"), {
-        lotId,
-        name: renter.name,
-        phone: renter.phone || "",
-        from: renter.from || null,   // "YYYY-MM-DD"
-        to: renter.to || null,       // "YYYY-MM-DD" | null
-        status: "pending",           // หรือ "confirmed" ตาม flow ของคุณ
-        createdAt: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error(e);
-      setErr("บันทึกการลงทะเบียนไม่สำเร็จ");
-    }
-  };
+  // ✅ บันทึกเป็น booking ใหม่ไปที่ /bookings (เก็บ pricePerDay ด้วย)
+  // ✅ บันทึกเป็น booking ใหม่ไปที่ /bookings (เก็บ pricePerMonth + ชื่อผู้เช่า)
+const addBooking = async (lot, renter) => {
+  // คาดหวัง renter = { name, phone, from, to }
+  try {
+    await addDoc(collection(db, "bookings"), {
+      lotId: lot.id,
+      lotName: lot.name || lot.lotNo || lot.lot || "",
+      pricePerMonth: Number(lot.pricePerMonth ?? 0),
+
+      // 👇 เพิ่มชื่อผู้เช่าให้ถูกบันทึก
+      name: renter.name || "",           // หรือจะใช้ renterName: renter.name ก็ได้
+      // renterName: renter.name || "",   // (ถ้าใช้คีย์นี้ ด้านอ่านข้อมูลก็รองรับอยู่แล้ว)
+
+      phone: renter.phone || "",
+      from: renter.from || null,
+      to: renter.to || null,
+      status: "pending",
+      createdAt: serverTimestamp(),
+    });
+  } catch (e) {
+    console.error(e);
+    setErr("บันทึกการลงทะเบียนไม่สำเร็จ");
+  }
+};
 
   // ---- modal handlers ----
   const openRegister = (lot) => {
@@ -197,7 +240,10 @@ export default function Home() {
                 <Card className="shadow-sm text-center h-100 border-0">
                   <Card.Img
                     variant="top"
-                    src={lot.image || "https://cdn-icons-png.flaticon.com/512/149/149071.png"}
+                    src={
+                      lot.image ||
+                      "https://cdn-icons-png.flaticon.com/512/149/149071.png"
+                    }
                     className="p-3"
                     style={{ width: "150px", margin: "0 auto" }}
                     alt={lot.name}
@@ -212,7 +258,7 @@ export default function Home() {
 
                     <Card.Text className="mb-2">
                       <strong>ราคา:</strong>{" "}
-                      {toTHB(lot.pricePerDay) || "-"} /วัน
+                      {toTHB(lot.pricePerMonth) || "-"} /เดือน
                     </Card.Text>
                     <Card.Text className="text-muted" style={{ minHeight: 48 }}>
                       {lot.desc || "-"}
@@ -247,7 +293,10 @@ export default function Home() {
             <Row className="g-3">
               <Col md={4} className="text-center">
                 <img
-                  src={selectedLot.image || "https://cdn-icons-png.flaticon.com/512/149/149071.png"}
+                  src={
+                    selectedLot.image ||
+                    "https://cdn-icons-png.flaticon.com/512/149/149071.png"
+                  }
                   alt={selectedLot.name}
                   style={{ width: "70%", maxWidth: 220 }}
                   className="mb-3"
@@ -268,7 +317,8 @@ export default function Home() {
                     <strong>โซน:</strong> {selectedLot.zone || "-"}
                   </ListGroup.Item>
                   <ListGroup.Item>
-                    <strong>ราคา/วัน:</strong> {toTHB(selectedLot.pricePerDay) || "-"}
+                    <strong>ราคา/เดือน:</strong>{" "}
+                    {toTHB(selectedLot.pricePerMonth) || "-"}
                   </ListGroup.Item>
                   <ListGroup.Item>
                     <strong>มัดจำ:</strong> {toTHB(selectedLot.deposit) || "-"}
@@ -334,7 +384,8 @@ export default function Home() {
                               <div>
                                 <div className="fw-semibold">{r.name}</div>
                                 <div className="text-muted small">
-                                  โทร: {r.phone || "-"} | จาก {fmtDate(r.from)} ถึง {fmtDate(r.to)}
+                                  โทร: {r.phone || "-"} | จาก {fmtDate(r.from)} ถึง{" "}
+                                  {fmtDate(r.to)}
                                 </div>
                               </div>
                               <Badge bg={badgeBg}>{statusText}</Badge>
@@ -381,7 +432,7 @@ export default function Home() {
             onClose={closeRegister}
             onSave={async (renter) => {
               if (!selectedLot) return;
-              await addBooking(selectedLot.id, renter);
+              await addBooking(selectedLot, renter); 
               closeRegister();
             }}
           />

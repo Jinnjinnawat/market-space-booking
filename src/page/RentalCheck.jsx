@@ -1,3 +1,4 @@
+// src/page/RentalCheck.jsx
 import { useMemo, useState, useEffect } from "react";
 import {
   Badge,
@@ -13,7 +14,8 @@ import {
   Pagination,
   Spinner,
 } from "react-bootstrap";
-import NavbarComponent from "../componnets/Navbar"; // ⚠️ ถ้าโฟลเดอร์สะกดเป็น components ให้แก้ให้ตรง
+import { useNavigate } from "react-router-dom";
+import NavbarComponent from "../componnets/Navbar";
 
 // 🔗 Firebase
 import { db } from "../service/Firebase";
@@ -21,7 +23,8 @@ import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 
 export default function RentalCheck() {
   // ---------- state ----------
-  const [rentalsRaw, setRentalsRaw] = useState([]);
+  const [bookingsRaw, setBookingsRaw] = useState([]);
+  const [lotsRaw, setLotsRaw] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -29,81 +32,40 @@ export default function RentalCheck() {
   const [detail, setDetail] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
   const pageSize = 8;
+  const navigate = useNavigate();
 
   // ---------- utils ----------
   const toTHB = (n) =>
-    n?.toLocaleString("th-TH", { style: "currency", currency: "THB" });
-
-  const toDateString = (v) => {
-    // รองรับ Firestore Timestamp / Date / String (YYYY-MM-DD)
-    if (!v) return "";
-    try {
-      if (typeof v?.toDate === "function") {
-        const d = v.toDate();
-        return d.toISOString().slice(0, 10);
-      }
-      if (v instanceof Date) return v.toISOString().slice(0, 10);
-      if (typeof v === "string") return v.slice(0, 10);
-      return "";
-    } catch {
-      return "";
-    }
-  };
+    typeof n === "number" && !Number.isNaN(n)
+      ? n.toLocaleString("th-TH", { style: "currency", currency: "THB" })
+      : "-";
 
   // ---------- fetch Firestore ----------
+  // 1) lots
   useEffect(() => {
-    // ควรมีคอลเลกชันชื่อ "bookings"
-    const qRef = query(collection(db, "bookings"), orderBy("createdAt", "desc"));
+    const qLots = query(collection(db, "lots"));
     const unsub = onSnapshot(
-      qRef,
+      qLots,
       (snap) => {
-        const rows = snap.docs.map((doc) => {
-          const d = doc.data() || {};
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setLotsRaw(rows);
+      },
+      (err) => console.error("lots onSnapshot error:", err)
+    );
+    return () => unsub();
+  }, []);
 
-          // พยายามจับคู่ฟิลด์ที่อาจต่างชื่อกันเล็กน้อย
-          const startDate = toDateString(d.startDate || d.from || d.start);
-          const endDate = toDateString(d.endDate || d.to || d.end);
-          const pricePerDay = Number(d.pricePerDay ?? d.price ?? 0);
-          const deposit = Number(d.deposit ?? 0);
-
-          const lotName = d.lotName ?? d.lot ?? `ล็อตที่ ${d.lotId ?? "-"}`;
-          const zone = d.zone ?? "-";
-          const renter = d.renter ?? d.renterName ?? d.name ?? "-";
-          const phone = d.phone ?? d.tel ?? "-";
-          const status = d.status ?? "-"; // ✅ จะได้ "อนุมัติ" จาก Firestore
-          const note = d.note ?? d.remark ?? "";
-
-          // คำนวณวัน/ยอดรวม
-          const days =
-            startDate && endDate
-              ? 1 +
-                Math.round(
-                  (new Date(endDate) - new Date(startDate)) /
-                    (1000 * 60 * 60 * 24)
-                )
-              : 0;
-          const rentTotal = days * pricePerDay;
-          const grandTotal = rentTotal + deposit;
-
-          return {
-            id: d.code || d.bookingCode || doc.id,
-            lotId: d.lotId ?? null,
-            lotName,
-            zone,
-            renter,
-            phone,
-            startDate,
-            endDate,
-            pricePerDay,
-            deposit,
-            status,
-            note,
-            days,
-            rentTotal,
-            grandTotal,
-          };
-        });
-        setRentalsRaw(rows);
+  // 2) bookings
+  useEffect(() => {
+    const qBookings = query(
+      collection(db, "bookings"),
+      orderBy("createdAt", "desc")
+    );
+    const unsub = onSnapshot(
+      qBookings,
+      (snap) => {
+        const rows = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setBookingsRaw(rows);
         setLoading(false);
       },
       (err) => {
@@ -114,45 +76,90 @@ export default function RentalCheck() {
     return () => unsub();
   }, []);
 
+  // ทำ map สำหรับหา lot จาก lotId ได้ไว
+  const lotsMap = useMemo(() => {
+    const m = new Map();
+    for (const l of lotsRaw) m.set(l.id, l);
+    return m;
+  }, [lotsRaw]);
+
+  // รวมข้อมูล bookings + lots
+  const bookings = useMemo(() => {
+    return bookingsRaw.map((b) => {
+      const lot = lotsMap.get(b.lotId || b.lotID || b.lotRef) || {};
+      const lotNo = lot.lotNo ?? lot.name ?? `ล็อต ${b.lotId ?? "-"}`;
+      const zone = lot.zone ?? b.zone ?? "-";
+
+      // 🔸 ราคา/เดือน: ดึงจาก /bookings ก่อน แล้วค่อย fallback ไปที่ /lots
+      const rawPerMonth =
+        b.pricePerMonth ??
+        b.monthlyPrice ??
+        b.ratePerMonth ??
+        lot.pricePerMonth ??
+        lot.monthlyPrice ??
+        0;
+      const pricePerMonth = Number(rawPerMonth) || 0;
+
+      const deposit = Number(b.deposit ?? lot.deposit ?? 0);
+
+      // สถานะ normalize ให้เทียบได้ทั้งไทย/อังกฤษ
+      const statusRaw = String(b.status || "").trim().toLowerCase();
+      const statusDisplay = b.status ?? "-";
+
+      return {
+        id: b.code || b.bookingCode || b.id,
+        lotId: b.lotId ?? null,
+        lotNo,
+        zone,
+        renter: b.renter ?? b.renterName ?? b.name ?? "-",
+        phone: b.phone ?? b.tel ?? "-",
+        pricePerMonth, // ✅ ใช้แสดงในตาราง/โมดอล
+        deposit,
+        statusDisplay,
+        statusRaw,
+        note: b.note ?? b.remark ?? "",
+      };
+    });
+  }, [bookingsRaw, lotsMap]);
+
   // ---------- filter/search ----------
   useEffect(() => setPage(1), [q, statusFilter]);
 
-  const computedRentals = rentalsRaw; // คำนวณแล้วตอน map ข้างบน
-
   const filtered = useMemo(() => {
     const qLower = q.trim().toLowerCase();
-    return computedRentals.filter((r) => {
-      const hay = [r.id, r.lotName, r.zone, r.renter, r.phone, r.note]
+    return bookings.filter((r) => {
+      const hay = [r.id, r.lotNo, r.zone, r.renter, r.phone, r.note]
         .join(" ")
         .toLowerCase();
       const matchQ = !qLower || hay.includes(qLower);
-      const matchStatus = !statusFilter || r.status === statusFilter;
+
+      const sf = statusFilter.trim().toLowerCase();
+      const matchStatus =
+        !sf ||
+        r.statusRaw === sf ||
+        (sf === "อนุมัติ" && r.statusRaw === "approved") ||
+        (sf === "approved" && r.statusRaw === "อนุมัติ");
+
       return matchQ && matchStatus;
     });
-  }, [computedRentals, q, statusFilter]);
+  }, [bookings, q, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   // ---------- view helpers ----------
-  const badgeVariant = (status) => {
-    switch (status) {
-      case "อนุมัติ":
-      case "ยืนยันแล้ว":
-        return "success";
-      case "รอชำระ":
-        return "warning";
-      case "ยกเลิก":
-        return "secondary";
-      default:
-        return "light";
-    }
+  const badgeVariant = (statusText) => {
+    const s = String(statusText || "").toLowerCase();
+    if (s === "approved" || s === "อนุมัติ" || s === "ยืนยันแล้ว") return "success";
+    if (s === "pending" || s === "รอชำระ") return "warning";
+    if (s === "cancelled" || s === "ยกเลิก") return "secondary";
+    return "light";
   };
 
   // ---------- actions ----------
   const handlePay = (record) => {
-  navigate(`/payments/${record.id}`); // ✅ ไปหน้าใหม่พร้อมส่ง booking id
-};
+    navigate(`/payments/${record.id}`);
+  };
 
   return (
     <>
@@ -183,6 +190,7 @@ export default function RentalCheck() {
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
                   <option value="">ทั้งหมด</option>
+                  <option value="approved">approved</option>
                   <option value="อนุมัติ">อนุมัติ</option>
                   <option value="รอชำระ">รอชำระ</option>
                   <option value="ยืนยันแล้ว">ยืนยันแล้ว</option>
@@ -225,11 +233,13 @@ export default function RentalCheck() {
               <thead className="table-light">
                 <tr>
                   <th>เลขที่เช่า</th>
-                  <th>ล็อต</th>
+                  <th>ล็อต (lotNo)</th>
                   <th>โซน</th>
+                  {/* ✅ เปลี่ยนเป็นราคา/เดือน */}
+                  <th className="text-end">ราคา/เดือน</th>
                   <th>ผู้เช่า</th>
-                  <th>ช่วงเช่า</th>
-                  <th className="text-end">รวมค่าเช่า</th>
+                  {/* ❌ เอาช่วงเช่าออก */}
+                  {/* ❌ เอารวมค่าเช่าออก */}
                   <th className="text-center">สถานะ</th>
                   <th className="text-center">จัดการ</th>
                 </tr>
@@ -237,13 +247,13 @@ export default function RentalCheck() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-4">
+                    <td colSpan={7} className="text-center py-4">
                       <Spinner animation="border" role="status" />
                     </td>
                   </tr>
                 ) : pageItems.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center text-muted py-4">
+                    <td colSpan={7} className="text-center text-muted py-4">
                       ไม่พบข้อมูลที่ตรงเงื่อนไข
                     </td>
                   </tr>
@@ -251,23 +261,18 @@ export default function RentalCheck() {
                   pageItems.map((r) => (
                     <tr key={r.id}>
                       <td>{r.id}</td>
-                      <td>{r.lotName}</td>
+                      <td>{r.lotNo}</td>
                       <td>{r.zone}</td>
+                      {/* ✅ แสดงราคา/เดือน */}
+                      <td className="text-end">{toTHB(r.pricePerMonth)}</td>
                       <td>
                         <div>{r.renter}</div>
                         <small className="text-muted">{r.phone}</small>
                       </td>
-                      <td>
-                        {r.startDate} → {r.endDate} ({r.days} วัน)
-                      </td>
-                      <td className="text-end">
-                        {toTHB(r.rentTotal)}{" "}
-                        <small className="text-muted">
-                          (+มัดจำ {toTHB(r.deposit)})
-                        </small>
-                      </td>
                       <td className="text-center">
-                        <Badge bg={badgeVariant(r.status)}>{r.status}</Badge>
+                        <Badge bg={badgeVariant(r.statusDisplay)}>
+                          {r.statusDisplay}
+                        </Badge>
                       </td>
                       <td className="text-center">
                         <div className="d-flex gap-2 justify-content-center">
@@ -282,8 +287,8 @@ export default function RentalCheck() {
                             รายละเอียด
                           </Button>
 
-                          {/* ✅ แสดงเฉพาะเมื่อสถานะจาก Firestore เป็น "อนุมัติ" */}
-                          {r.status === "อนุมัติ" && (
+                          {(r.statusRaw === "approved" ||
+                            r.statusRaw === "อนุมัติ") && (
                             <Button
                               size="sm"
                               variant="success"
@@ -335,7 +340,9 @@ export default function RentalCheck() {
       {/* Modal รายละเอียด */}
       <Modal show={showDetail} onHide={() => setShowDetail(false)} centered size="lg">
         <Modal.Header closeButton>
-          <Modal.Title>รายละเอียดการเช่า {detail ? `• ${detail.id}` : ""}</Modal.Title>
+          <Modal.Title>
+            รายละเอียดการเช่า {detail ? `• ${detail.id}` : ""}
+          </Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {detail && (
@@ -350,32 +357,26 @@ export default function RentalCheck() {
 
                   <dt className="col-5">ล็อต / โซน</dt>
                   <dd className="col-7">
-                    {detail.lotName} / {detail.zone}
+                    {detail.lotNo} / {detail.zone}
                   </dd>
 
-                  <dt className="col-5">ช่วงวันที่</dt>
-                  <dd className="col-7">
-                    {detail.startDate} → {detail.endDate} ({detail.days} วัน)
-                  </dd>
-
-                  <dt className="col-5">ราคา/วัน</dt>
-                  <dd className="col-7">{toTHB(detail.pricePerDay)}</dd>
+                  {/* ❌ เอาช่วงวันที่ออก */}
+                  <dt className="col-5">ราคา/เดือน</dt>
+                  <dd className="col-7">{toTHB(detail.pricePerMonth)}</dd>
                 </dl>
               </Col>
               <Col md={6}>
                 <dl className="row mb-0">
-                  <dt className="col-5">ค่าเช่ารวม</dt>
-                  <dd className="col-7">{toTHB(detail.rentTotal)}</dd>
-
+                  {/* ❌ เอาค่าเช่ารวมออก */}
                   <dt className="col-5">มัดจำ</dt>
                   <dd className="col-7">{toTHB(detail.deposit)}</dd>
 
-                  <dt className="col-5">ยอดชำระรวม</dt>
-                  <dd className="col-7">{toTHB(detail.grandTotal)}</dd>
-
+                  {/* ❌ เอายอดชำระรวมออก */}
                   <dt className="col-5">สถานะ</dt>
                   <dd className="col-7">
-                    <Badge bg={badgeVariant(detail.status)}>{detail.status}</Badge>
+                    <Badge bg={badgeVariant(detail.statusDisplay)}>
+                      {detail.statusDisplay}
+                    </Badge>
                   </dd>
 
                   <dt className="col-5">หมายเหตุ</dt>
@@ -386,8 +387,7 @@ export default function RentalCheck() {
           )}
         </Modal.Body>
         <Modal.Footer>
-          {/* ถ้าสถานะเป็นอนุมัติ แสดงปุ่มชำระเงินในโมดอลด้วยก็ได้ */}
-          {detail?.status === "อนุมัติ" && (
+          {(detail?.statusRaw === "approved" || detail?.statusRaw === "อนุมัติ") && (
             <Button variant="success" onClick={() => handlePay(detail)}>
               ชำระเงิน
             </Button>
