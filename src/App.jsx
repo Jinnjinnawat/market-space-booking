@@ -17,11 +17,13 @@ import ProtectedRoute from "./componnets/ProtectedRoute";
 import RentalRequestsTable from "./page/RentalRequestsTable";
 import PaymentPage from "./page/PaymentPage";
 import PaymentsPageAdmin from "./page/PaymentsPageAdmin";
+import UserProfilePage from "./page/User"
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
         {/* หน้า public */}
+        <Route path="/user" element={<UserProfilePage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/AdminDashboard" element={<AdminDashboard />} />
         <Route path="/announcements" element={<AnnouncementsPage />} />
