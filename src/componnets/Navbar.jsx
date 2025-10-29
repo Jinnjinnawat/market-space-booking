@@ -39,6 +39,12 @@ export default function NavbarComponent() {
             <Nav.Link as={Link} to="/rentalCheck">
               ตรวจสอบการเช่าพื้นที่
             </Nav.Link>
+            <Nav.Link as={Link} to="/utilitiesuser">
+              ชำระค่าค่าสาธารณูปโภค
+            </Nav.Link>
+            <Nav.Link as={Link} to="/ExpenseSummaryPage">
+              ประวัติค่าใช้จ่ายทั้งหมด
+            </Nav.Link>
           </Nav>
 
           {/* ---------- ส่วนขวา ---------- */}

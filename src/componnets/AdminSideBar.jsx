@@ -44,8 +44,8 @@ export default function AdminSidebar() {
         <Nav.Link as={NavLink} to="/requeststable" className={linkClass}>
           <span>จัดการการเช่า</span>
         </Nav.Link>
-        <Nav.Link as={NavLink} to="/paymentspageadmin" className={linkClass}>
-          <span>ข้อมูลการชำระเงิน</span>
+        <Nav.Link as={NavLink} to="/utilities" className={linkClass}>
+          <span>จัดการค่าสาธารณูปโภค</span>
         </Nav.Link>
         
       </Nav>

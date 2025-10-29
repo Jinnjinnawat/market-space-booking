@@ -19,7 +19,13 @@ import NavbarComponent from "../componnets/Navbar";
 
 // 🔗 Firebase
 import { db } from "../service/Firebase";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+} from "firebase/firestore";
+import { useAuth } from "../context/AuthProvider";
 
 export default function RentalCheck() {
   // ---------- state ----------
@@ -32,7 +38,9 @@ export default function RentalCheck() {
   const [detail, setDetail] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
   const pageSize = 8;
+
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
 
   // ---------- utils ----------
   const toTHB = (n) =>
@@ -40,19 +48,16 @@ export default function RentalCheck() {
       ? n.toLocaleString("th-TH", { style: "currency", currency: "THB" })
       : "-";
 
-  // แปลงสถานะฝั่งแสดงผล (UI): paid -> ชำระเงิน
   const statusText = (s) => {
     const t = String(s || "").trim().toLowerCase();
     if (t === "paid") return "ชำระเงิน";
-    // รองรับสองภาษาสำคัญอื่น ๆ ตามเดิม
     if (t === "approved") return "อนุมัติ";
     if (t === "cancelled") return "ยกเลิก";
     if (t === "pending") return "รอชำระ";
     return s || "-";
   };
 
-  // ---------- fetch Firestore ----------
-  // 1) lots
+  // ---------- fetch lots ----------
   useEffect(() => {
     const qLots = query(collection(db, "lots"));
     const unsub = onSnapshot(
@@ -66,42 +71,86 @@ export default function RentalCheck() {
     return () => unsub();
   }, []);
 
-  // 2) bookings
+  // ---------- fetch bookings (รองรับหลาย schema: uid | userId | createdBy.uid) ----------
   useEffect(() => {
-    const qBookings = query(
-      collection(db, "bookings"),
-      orderBy("createdAt", "desc")
-    );
-    const unsub = onSnapshot(
-      qBookings,
-      (snap) => {
-        const rows = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setBookingsRaw(rows);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("bookings onSnapshot error:", err);
-        setLoading(false);
-      }
-    );
-    return () => unsub();
-  }, []);
+    if (authLoading) return;
 
-  // ทำ map สำหรับหา lot จาก lotId ได้ไว
+    // ยังไม่ล็อกอิน → ไม่ต้องคิวรี
+    if (!user) {
+      setBookingsRaw([]);
+      setLoading(false);
+      return;
+    }
+
+    const baseRef = collection(db, "bookings");
+
+    // แยก 3 คิวรี (ไม่มี orderBy เพื่อเลี่ยงปัญหา composite index)
+    const q1 = query(baseRef, where("uid", "==", user.uid));
+    const q2 = query(baseRef, where("userId", "==", user.uid));
+    const q3 = query(baseRef, where("createdBy.uid", "==", user.uid));
+
+    let pool = new Map(); // รวมเอกสารตาม id ป้องกันซ้ำ
+    let gotAnySnapshot = false;
+
+    const collect = (snap) => {
+      gotAnySnapshot = true;
+      snap.docs.forEach((d) => {
+        pool.set(d.id, { id: d.id, ...d.data() });
+      });
+      // อัปเดตทุกครั้งที่ได้ snapshot ใด ๆ
+      const merged = Array.from(pool.values());
+
+      // เรียงโดย createdAt ถ้ามี (ใหม่→เก่า)
+      merged.sort((a, b) => {
+        const ta = a?.createdAt?.toMillis?.() ?? 0;
+        const tb = b?.createdAt?.toMillis?.() ?? 0;
+        return tb - ta;
+      });
+
+      setBookingsRaw(merged);
+      setLoading(false);
+    };
+
+    const unsub1 = onSnapshot(q1, collect, (err) => {
+      console.error("bookings(uid) error:", err);
+      setLoading(false);
+    });
+    const unsub2 = onSnapshot(q2, collect, (err) => {
+      console.error("bookings(userId) error:", err);
+      setLoading(false);
+    });
+    const unsub3 = onSnapshot(q3, collect, (err) => {
+      console.error("bookings(createdBy.uid) error:", err);
+      setLoading(false);
+    });
+
+    // กันกรณีคอลเลกชันว่าง/ไม่มีสิทธิ์: ถ้าเวลาผ่านไปแล้วไม่มี snapshot เลย ให้ setLoading(false)
+    const timer = setTimeout(() => {
+      if (!gotAnySnapshot) setLoading(false);
+    }, 1500);
+
+    return () => {
+      clearTimeout(timer);
+      unsub1();
+      unsub2();
+      unsub3();
+    };
+  }, [authLoading, user]);
+
+  // ---------- รวม lots ----------
   const lotsMap = useMemo(() => {
     const m = new Map();
     for (const l of lotsRaw) m.set(l.id, l);
     return m;
   }, [lotsRaw]);
 
-  // รวมข้อมูล bookings + lots
+  // ---------- รวมข้อมูล bookings + lots ----------
   const bookings = useMemo(() => {
     return bookingsRaw.map((b) => {
       const lot = lotsMap.get(b.lotId || b.lotID || b.lotRef) || {};
       const lotNo = lot.lotNo ?? lot.name ?? `ล็อต ${b.lotId ?? "-"}`;
       const zone = lot.zone ?? b.zone ?? "-";
 
-      // 🔸 ราคา/เดือน: ดึงจาก /bookings ก่อน แล้วค่อย fallback ไปที่ /lots
       const rawPerMonth =
         b.pricePerMonth ??
         b.monthlyPrice ??
@@ -110,25 +159,21 @@ export default function RentalCheck() {
         lot.monthlyPrice ??
         0;
       const pricePerMonth = Number(rawPerMonth) || 0;
-
       const deposit = Number(b.deposit ?? lot.deposit ?? 0);
-
-      // เก็บสถานะดิบ (ใช้เช็คเงื่อนไข/ปุ่ม)
       const statusRaw = String(b.status || "").trim().toLowerCase();
-      // สถานะที่ใช้ “แสดงผล” (มีการแปลง paid -> ชำระเงิน)
       const statusDisplay = statusText(b.status ?? "-");
 
       return {
         id: b.code || b.bookingCode || b.id,
-        lotId: b.lotId ?? null,
+        lotId: b.lotId ?? b.lotID ?? b.lotRef ?? null,
         lotNo,
         zone,
         renter: b.renter ?? b.renterName ?? b.name ?? "-",
         phone: b.phone ?? b.tel ?? "-",
         pricePerMonth,
         deposit,
-        statusDisplay, // ← ใช้โชว์
-        statusRaw,     // ← ใช้เช็คเงื่อนไข
+        statusDisplay,
+        statusRaw,
         note: b.note ?? b.remark ?? "",
       };
     });
@@ -149,7 +194,6 @@ export default function RentalCheck() {
       const matchStatus =
         !sf ||
         r.statusRaw === sf ||
-        // จับคู่สองภาษา
         (sf === "อนุมัติ" && r.statusRaw === "approved") ||
         (sf === "approved" && r.statusRaw === "อนุมัติ") ||
         (sf === "ชำระเงิน" && r.statusRaw === "paid") ||
@@ -165,23 +209,21 @@ export default function RentalCheck() {
   // ---------- view helpers ----------
   const badgeVariant = (statusTextForView) => {
     const s = String(statusTextForView || "").toLowerCase();
-    // ถือว่าข้อความสำหรับ UI แล้ว: “ชำระเงิน”, “อนุมัติ”, ฯลฯ
     if (s === "ชำระเงิน") return "success";
     if (s === "อนุมัติ" || s === "ยืนยันแล้ว") return "success";
     if (s === "รอชำระ") return "warning";
     if (s === "ยกเลิก") return "secondary";
-    // เผื่อกรณีส่งดิบเข้ามา
     if (s === "paid" || s === "approved") return "success";
     if (s === "pending") return "warning";
     if (s === "cancelled") return "secondary";
     return "light";
   };
 
-  // ---------- actions ----------
   const handlePay = (record) => {
     navigate(`/payments/${record.id}`);
   };
 
+  // ---------- UI ----------
   return (
     <>
       <NavbarComponent />
@@ -189,6 +231,12 @@ export default function RentalCheck() {
       <Container className="mt-4 mb-5">
         <Card className="shadow-sm border-0">
           <Card.Body>
+            {authLoading && (
+              <div className="mb-3">
+                <Spinner animation="border" size="sm" /> กำลังตรวจสอบสิทธิ์ผู้ใช้...
+              </div>
+            )}
+
             <Row className="g-3 align-items-end">
               <Col xs={12} md={5}>
                 <Form.Label>ค้นหา</Form.Label>
@@ -216,7 +264,6 @@ export default function RentalCheck() {
                   <option value="รอชำระ">รอชำระ</option>
                   <option value="ยืนยันแล้ว">ยืนยันแล้ว</option>
                   <option value="ยกเลิก">ยกเลิก</option>
-                  {/* ✅ เพิ่มตัวเลือก “ชำระเงิน” และ “paid” */}
                   <option value="ชำระเงิน">ชำระเงิน</option>
                   <option value="paid">paid</option>
                 </Form.Select>
@@ -259,10 +306,8 @@ export default function RentalCheck() {
                   <th>เลขที่เช่า</th>
                   <th>ล็อต (lotNo)</th>
                   <th>โซน</th>
-                  {/* ✅ ราคา/เดือน */}
                   <th className="text-end">ราคา/เดือน</th>
                   <th>ผู้เช่า</th>
-                  {/* ❌ เอาช่วงเช่าออก / ❌ เอารวมค่าเช่าออก */}
                   <th className="text-center">สถานะ</th>
                   <th className="text-center">จัดการ</th>
                 </tr>
@@ -320,7 +365,6 @@ export default function RentalCheck() {
                               ชำระเงิน
                             </Button>
                           )}
-                          {/* ถ้าจ่ายแล้ว (paid) จะไม่แสดงปุ่มชำระเงิน */}
                         </div>
                       </td>
                     </tr>
@@ -384,18 +428,15 @@ export default function RentalCheck() {
                     {detail.lotNo} / {detail.zone}
                   </dd>
 
-                  {/* ❌ เอาช่วงวันที่ออก */}
                   <dt className="col-5">ราคา/เดือน</dt>
                   <dd className="col-7">{toTHB(detail.pricePerMonth)}</dd>
                 </dl>
               </Col>
               <Col md={6}>
                 <dl className="row mb-0">
-                  {/* ❌ เอาค่าเช่ารวมออก */}
                   <dt className="col-5">มัดจำ</dt>
                   <dd className="col-7">{toTHB(detail.deposit)}</dd>
 
-                  {/* ❌ เอายอดชำระรวมออก */}
                   <dt className="col-5">สถานะ</dt>
                   <dd className="col-7">
                     <Badge bg={badgeVariant(detail.statusDisplay)}>

@@ -15,8 +15,6 @@ import {
 import NavbarComponent from "../componnets/Navbar";
 import FromRegister from "../componnets/Formregister";
 import Footer from "../componnets/Footer";
-
-// 🔥 Firestore
 import {
   collection,
   onSnapshot,
@@ -26,20 +24,17 @@ import {
   orderBy,
 } from "firebase/firestore";
 import { db } from "../service/Firebase";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthProvider"; // ✅ ดึง user จาก Auth
 
-// ✅ ตัวช่วยฟอร์แมตวันที่สั้น ๆ
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("th-TH") : "-");
 
-// ✅ แปลงฟิลด์ Firestore → ฟิลด์สำหรับ UI
 const normalizeLot = (l) => {
-  // แปลง amenities object → array (เก็บเฉพาะ key ที่เป็น true)
   const amenitiesArr = Array.isArray(l.amenities)
     ? l.amenities
     : Object.entries(l.amenities || {})
         .filter(([, v]) => !!v)
         .map(([k]) => k);
-
-  // แปลงสถานะอังกฤษ → ไทย (ถ้าเป็นไทยอยู่แล้วก็ผ่าน)
   const statusTH =
     l.status === "available"
       ? "ว่าง"
@@ -48,14 +43,10 @@ const normalizeLot = (l) => {
       : l.status === "inactive"
       ? "ปิดใช้งาน"
       : l.status || "ว่าง";
-
   return {
     ...l,
-    // ใช้ lotNo เป็นชื่อการ์ดถ้าไม่มี name
     name: l.name || l.lotNo || l.lot || "-",
-    // รองรับทั้ง image และ imageUrl
     image: l.image || l.imageUrl || "",
-    // รองรับทั้ง desc และ notes
     desc: l.desc || l.notes || "",
     amenities: amenitiesArr,
     status: statusTH,
@@ -63,27 +54,27 @@ const normalizeLot = (l) => {
 };
 
 export default function Home() {
-  // ---- state หลัก ----
-  const [lots, setLots] = useState([]);          // /lots (normalize แล้ว)
-  const [bookings, setBookings] = useState([]);  // /bookings
+  const [lots, setLots] = useState([]);
+  const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
-
   const [showRegister, setShowRegister] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedLot, setSelectedLot] = useState(null);
+
+  const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth(); // ✅ user จาก Auth
 
   const toTHB = (n) =>
     typeof n === "number"
       ? n.toLocaleString("th-TH", { style: "currency", currency: "THB" })
       : n
-      ? `${n}` // ถ้าเป็น string เช่นใส่มาเป็น "1000"
+      ? `${n}`
       : undefined;
 
-  // ---- subscribe Firestore: /lots และ /bookings ----
+  // ---------- Firestore subscriptions ----------
   useEffect(() => {
     try {
-      // ✅ ใช้ฟิลด์ที่มีจริง (คาดว่า lots มี createdAt)
       const unsubLots = onSnapshot(
         query(collection(db, "lots"), orderBy("createdAt", "desc")),
         (snap) => {
@@ -99,6 +90,7 @@ export default function Home() {
       );
 
       const unsubBookings = onSnapshot(
+        // ถ้า collection มีเอกสารที่ไม่มีฟิลด์ from อาจต้องเปลี่ยนเป็น orderBy("createdAt","desc")
         query(collection(db, "bookings"), orderBy("from", "desc")),
         (snap) => {
           const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -121,84 +113,129 @@ export default function Home() {
     }
   }, []);
 
-  // ---- รวม lots + bookings เป็น lotsWithRenters ----
+  // ---------- derive lots with renters ----------
   const lotsWithRenters = useMemo(() => {
     if (!lots.length) return [];
     const today = new Date();
-
-    // group bookings by lotId
     const byLot = bookings.reduce((acc, b) => {
-      const { lotId } = b;
-      if (!lotId) return acc;
-      (acc[lotId] ||= []).push(b);
+      if (!b?.lotId) return acc;
+      (acc[b.lotId] ||= []).push(b);
       return acc;
     }, {});
 
     return lots.map((l) => {
-      const r = (byLot[l.id] || []).map((b) => ({
-        name: b.name || b.renterName || "-",
-        phone: b.phone || "-",
+      const lotBookings = byLot[l.id] || [];
+      const renters = lotBookings.map((b) => ({
+        name: b.name || b.renterName || b?.createdBy?.displayName || "-",
+        phone: b.phone || b?.createdBy?.phone || "-",
         from: b.from || null,
         to: b.to || null,
         status: b.status || "pending",
+        uid: b.uid || b.userId || b?.createdBy?.uid || null,
       }));
 
-      // คิดสถานะล็อตจากรายการที่ยัง active
-      const hasActive = (byLot[l.id] || []).some((b) => {
+      const hasActive = lotBookings.some((b) => {
         const to = b.to ? new Date(b.to) : null;
         const notCancelled = (b.status || "").toLowerCase() !== "cancelled";
         return notCancelled && (!to || to >= today);
       });
 
+      const isPaid = lotBookings.some(
+        (b) => (b.status || "").toLowerCase() === "paid"
+      );
+
+      // นโยบายแสดงผล: ถ้าจ่ายแล้วขึ้น "ชำระแล้ว" มิฉะนั้น "ว่าง" (พร้อมให้กดเช่า)
+      const displayStatus = isPaid ? "ชำระแล้ว" : "ว่าง";
+      const actionLabel = "เช่าพื้นที่";
+
       return {
         ...l,
-        renters: r,
-        status: hasActive ? "ถูกเช่า" : l.status, // ถ้ากำลังเช่าอยู่ให้ขึ้น "ถูกเช่า"
+        renters,
+        hasActive,
+        isPaid,
+        displayStatus,
+        actionLabel,
       };
     });
   }, [lots, bookings]);
 
-  // ✅ เลือกผู้เช่าปัจจุบัน (ยังเช่าอยู่ ณ วันนี้)
   const getActiveRenters = (lot) => {
     if (!lot?.renters?.length) return [];
     const today = new Date();
     return lot.renters.filter((r) => {
-      if (!r.to) return true; // ไม่มีวันสิ้นสุด = ยังเช่าอยู่
+      if (!r.to) return true;
       return new Date(r.to) >= today;
     });
   };
 
-  // ✅ บันทึกเป็น booking ใหม่ไปที่ /bookings (เก็บ pricePerDay ด้วย)
-  // ✅ บันทึกเป็น booking ใหม่ไปที่ /bookings (เก็บ pricePerMonth + ชื่อผู้เช่า)
-const addBooking = async (lot, renter) => {
-  // คาดหวัง renter = { name, phone, from, to }
-  try {
-    await addDoc(collection(db, "bookings"), {
-      lotId: lot.id,
-      lotName: lot.name || lot.lotNo || lot.lot || "",
-      pricePerMonth: Number(lot.pricePerMonth ?? 0),
+  // ---------- create booking: attach current user info ----------
+  const addBooking = async (lot, renter) => {
+    if (lot?.isPaid) {
+      setErr("ล็อตนี้ถูกชำระแล้ว ไม่สามารถลงทะเบียน/เช่าต่อได้");
+      return;
+    }
+    if (!user) {
+      // ยังไม่ล็อกอิน → ส่งไปหน้า login พร้อม state กลับหน้าเดิม
+      navigate("/login", { replace: true, state: { from: { pathname: "/home" } } });
+      return;
+    }
 
-      // 👇 เพิ่มชื่อผู้เช่าให้ถูกบันทึก
-      name: renter.name || "",           // หรือจะใช้ renterName: renter.name ก็ได้
-      // renterName: renter.name || "",   // (ถ้าใช้คีย์นี้ ด้านอ่านข้อมูลก็รองรับอยู่แล้ว)
+    try {
+      await addDoc(collection(db, "bookings"), {
+        // เชื่อมกับล็อต
+        lotId: lot.id,
+        lotName: lot.name || lot.lotNo || lot.lot || "",
+        pricePerMonth: Number(lot.pricePerMonth ?? 0),
+        deposit: Number(lot.deposit ?? 0),
 
-      phone: renter.phone || "",
-      from: renter.from || null,
-      to: renter.to || null,
-      status: "pending",
-      createdAt: serverTimestamp(),
-    });
-  } catch (e) {
-    console.error(e);
-    setErr("บันทึกการลงทะเบียนไม่สำเร็จ");
-  }
-};
+        // ข้อมูลผู้เช่าในฟอร์ม
+        name: renter.name || user.displayName || "",
+        phone: renter.phone || "",
 
-  // ---- modal handlers ----
+        // ช่วงเวลาเช่าถ้ามี (ระบบนี้ลบการคำนวณรวมออกแล้ว แต่เผื่อเก็บโครง)
+        from: renter.from || null,
+        to: renter.to || null,
+
+        // สถานะเริ่มต้น
+        status: "pending",
+
+        // ✅ แนบข้อมูลผู้ใช้จากการล็อกอิน
+        uid: user.uid,
+        userEmail: user.email || "",
+        userDisplayName: user.displayName || "",
+        userPhotoURL: user.photoURL || "",
+        createdBy: {
+          uid: user.uid,
+          email: user.email || "",
+          displayName: user.displayName || "",
+          photoURL: user.photoURL || "",
+          at: serverTimestamp(),
+        },
+
+        // ตราประทับเวลา
+        createdAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error(e);
+      setErr("บันทึกการลงทะเบียนไม่สำเร็จ");
+    }
+  };
+
+  // ---------- modal handlers ----------
   const openRegister = (lot) => {
+    if (lot?.isPaid) {
+      setErr("ล็อตนี้ถูกชำระแล้ว ไม่สามารถลงทะเบียน/เช่าต่อได้");
+      return;
+    }
+    // ถ้ายังไม่ล็อกอิน ให้พาไปหน้า login ก่อน
+    if (!user && !authLoading) {
+      navigate("/login", { replace: true, state: { from: { pathname: "/home" } } });
+      return;
+    }
     setSelectedLot(lot);
     setShowRegister(true);
   };
+
   const closeRegister = () => {
     setShowRegister(false);
     setSelectedLot(null);
@@ -208,6 +245,7 @@ const addBooking = async (lot, renter) => {
     setSelectedLot(lot);
     setShowDetails(true);
   };
+
   const closeDetails = () => {
     setShowDetails(false);
     setSelectedLot(null);
@@ -215,23 +253,29 @@ const addBooking = async (lot, renter) => {
 
   const rentFromDetails = () => {
     const lot = selectedLot;
+    if (lot?.isPaid) {
+      setErr("ล็อตนี้ถูกชำระแล้ว ไม่สามารถลงทะเบียน/เช่าต่อได้");
+      return;
+    }
+    if (!user && !authLoading) {
+      navigate("/login", { replace: true, state: { from: { pathname: "/home" } } });
+      return;
+    }
     setShowDetails(false);
     setShowRegister(true);
     setSelectedLot(lot);
   };
 
+  // ---------- UI ----------
   return (
     <>
       <NavbarComponent />
-
       <Container className="mt-4 mb-5">
         <h2 className="text-center mb-4">รายการพื้นที่ให้เช่า</h2>
-
-        {err && <Alert variant="danger" className="mb-3">{err}</Alert>}
-
+        {err && <Alert variant="danger">{err}</Alert>}
         {loading ? (
           <div className="d-flex justify-content-center my-5">
-            <Spinner animation="border" role="status" />
+            <Spinner animation="border" />
           </div>
         ) : (
           <Row className="g-4 justify-content-center">
@@ -251,11 +295,10 @@ const addBooking = async (lot, renter) => {
                   <Card.Body>
                     <Card.Title className="d-flex justify-content-center align-items-center gap-2">
                       {lot.name}
-                      <Badge bg={lot.status === "ว่าง" ? "success" : "secondary"}>
-                        {lot.status}
+                      <Badge bg={lot.isPaid ? "primary" : "success"}>
+                        {lot.displayStatus}
                       </Badge>
                     </Card.Title>
-
                     <Card.Text className="mb-2">
                       <strong>ราคา:</strong>{" "}
                       {toTHB(lot.pricePerMonth) || "-"} /เดือน
@@ -263,13 +306,19 @@ const addBooking = async (lot, renter) => {
                     <Card.Text className="text-muted" style={{ minHeight: 48 }}>
                       {lot.desc || "-"}
                     </Card.Text>
-
                     <div className="d-flex justify-content-center gap-2">
-                      <Button variant="outline-primary" onClick={() => openDetails(lot)}>
+                      <Button
+                        variant="outline-primary"
+                        onClick={() => openDetails(lot)}
+                      >
                         รายละเอียด
                       </Button>
-                      <Button variant="success" onClick={() => openRegister(lot)}>
-                        ลงทะเบียนเข้าร่วมประมูล
+                      <Button
+                        variant={lot.isPaid ? "secondary" : "success"}
+                        disabled={!!lot.isPaid}
+                        onClick={() => openRegister(lot)}
+                      >
+                        {lot.actionLabel}
                       </Button>
                     </div>
                   </Card.Body>
@@ -287,7 +336,6 @@ const addBooking = async (lot, renter) => {
             รายละเอียดการเช่า {selectedLot ? `- ${selectedLot.name}` : ""}
           </Modal.Title>
         </Modal.Header>
-
         <Modal.Body>
           {selectedLot && (
             <Row className="g-3">
@@ -301,13 +349,12 @@ const addBooking = async (lot, renter) => {
                   style={{ width: "70%", maxWidth: 220 }}
                   className="mb-3"
                 />
-                <div className="d-inline-block">
-                  <Badge bg={selectedLot.status === "ว่าง" ? "success" : "secondary"}>
-                    {selectedLot.status}
+                <div>
+                  <Badge bg={selectedLot.isPaid ? "primary" : "success"}>
+                    {selectedLot.displayStatus}
                   </Badge>
                 </div>
               </Col>
-
               <Col md={8}>
                 <ListGroup variant="flush">
                   <ListGroup.Item>
@@ -333,88 +380,41 @@ const addBooking = async (lot, renter) => {
                     <strong>คำอธิบาย:</strong> {selectedLot.desc || "-"}
                   </ListGroup.Item>
 
-                  {/* ✅ ผู้เช่า (ปัจจุบัน) */}
+                  {/* ✅ ผู้เช่าปัจจุบัน: แสดง “จำนวนคน” */}
                   <ListGroup.Item>
-                    <strong>ผู้เช่า (ปัจจุบัน):</strong>{" "}
+                    <strong>ผู้เช่าปัจจุบัน:</strong>{" "}
                     {(() => {
                       const actives = getActiveRenters(selectedLot);
                       const count = actives.length;
-                      if (count === 0) {
-                        return "ไม่มี (ล็อตว่างหรือไม่มีผู้เช่าปัจจุบัน)";
-                      }
-                      return (
-                        <>
-                          {count} คน
-                          <div className="mt-2 d-flex flex-wrap gap-2">
-                            {actives.map((r, idx) => (
-                              <Badge key={idx} bg="info" className="fw-normal">
-                                {r.name}
-                              </Badge>
-                            ))}
-                          </div>
-                        </>
-                      );
+                      return count === 0
+                        ? "ไม่มีผู้เช่าปัจจุบัน"
+                        : `${count} คน`;
                     })()}
                   </ListGroup.Item>
 
-                  {/* ✅ ผู้เช่าทั้งหมดของล็อตนี้ */}
+                  {/* ✅ ผู้เช่าทั้งหมด: แสดง “จำนวนคน” */}
                   <ListGroup.Item>
                     <strong>ผู้เช่าทั้งหมด:</strong>{" "}
-                    {selectedLot.renters?.length ? (
-                      <div className="mt-2">
-                        {selectedLot.renters.map((r, i) => {
-                          const today = new Date();
-                          const isActive = !r.to || new Date(r.to) >= today;
-                          const statusText = !r.to
-                            ? "ไม่กำหนดสิ้นสุด"
-                            : isActive
-                            ? "กำลังเช่า"
-                            : "สิ้นสุดแล้ว";
-                          const badgeBg = !r.to
-                            ? "warning"
-                            : isActive
-                            ? "success"
-                            : "secondary";
-
-                          return (
-                            <div
-                              key={i}
-                              className="d-flex align-items-center justify-content-between border rounded p-2 mb-2"
-                            >
-                              <div>
-                                <div className="fw-semibold">{r.name}</div>
-                                <div className="text-muted small">
-                                  โทร: {r.phone || "-"} | จาก {fmtDate(r.from)} ถึง{" "}
-                                  {fmtDate(r.to)}
-                                </div>
-                              </div>
-                              <Badge bg={badgeBg}>{statusText}</Badge>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      "ยังไม่มีรายชื่อผู้เช่า/ผู้เข้าร่วมประมูล"
-                    )}
+                    {selectedLot.renters?.length
+                      ? `${selectedLot.renters.length} คน`
+                      : "ไม่มีข้อมูลผู้เช่า"}
                   </ListGroup.Item>
                 </ListGroup>
               </Col>
             </Row>
           )}
         </Modal.Body>
-
-        <Modal.Footer className="d-flex justify-content-between">
-          <div className="text-muted small">
-            *โปรดเตรียมบัตรประชาชน (ถ่ายรูป) และเบอร์โทรติดต่อ สำหรับยืนยันการเช่า
-          </div>
-          <div className="d-flex gap-2">
-            <Button variant="outline-secondary" onClick={closeDetails}>
-              ปิด
-            </Button>
-            <Button variant="success" onClick={rentFromDetails}>
-              ลงทะเบียนเข้าร่วมประมูล
-            </Button>
-          </div>
+        <Modal.Footer>
+          <Button variant="outline-secondary" onClick={closeDetails}>
+            ปิด
+          </Button>
+          <Button
+            variant={selectedLot?.isPaid ? "secondary" : "success"}
+            disabled={!!selectedLot?.isPaid}
+            onClick={rentFromDetails}
+          >
+            {selectedLot?.actionLabel || "ลงทะเบียนเข้าร่วมประมูล"}
+          </Button>
         </Modal.Footer>
       </Modal>
 
@@ -422,17 +422,21 @@ const addBooking = async (lot, renter) => {
       <Modal show={showRegister} onHide={closeRegister} centered size="lg">
         <Modal.Header closeButton>
           <Modal.Title>
-            ลงทะเบียนเข้าร่วมประมูล {selectedLot ? `- ${selectedLot.name}` : ""}
+            {selectedLot?.hasActive ? "เช่าต่อ" : "ลงทะเบียนเข้าร่วมประมูล"}{" "}
+            {selectedLot ? `- ${selectedLot.name}` : ""}
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {/* ส่ง onSave เพื่อให้ฟอร์มคืนข้อมูลผู้เช่า แล้วเขียนเข้า /bookings */}
           <FromRegister
             selectedLot={selectedLot}
             onClose={closeRegister}
             onSave={async (renter) => {
               if (!selectedLot) return;
-              await addBooking(selectedLot, renter); 
+              if (selectedLot.isPaid) {
+                setErr("ล็อตนี้ถูกชำระแล้ว ไม่สามารถลงทะเบียน/เช่าต่อได้");
+                return;
+              }
+              await addBooking(selectedLot, renter); // ✅ แนบ user ใน addBooking แล้ว
               closeRegister();
             }}
           />
