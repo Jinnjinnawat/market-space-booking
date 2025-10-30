@@ -26,14 +26,14 @@ export default function PayUtilities() {
                     สลิป: <a href={slipUrl} target="_blank" rel="noreferrer">เปิดดู</a>
                   </p>
                 ) : null}
-                <Button as={Link} to="/utilities" variant="primary">
-                  กลับไปหน้าค่าสาธารณูปโภคของฉัน
+                <Button as={Link} to="/home" variant="primary">
+                  กลับไปหน้าหลัก
                 </Button>
               </>
             ) : (
               <>
                 <p>ไม่พบข้อมูลการชำระล่าสุด</p>
-                <Button as={Link} to="/utilities" variant="secondary">
+                <Button as={Link} to="/payments/:id" variant="secondary">
                   กลับไปหน้ารายการ
                 </Button>
               </>

@@ -108,9 +108,9 @@ export default function UtilityPayModal({ show, onHide, utility, lotNo }) {
         updatedAt: serverTimestamp(),
       });
 
-      // 5) ปิดโมดอล และส่งไปหน้า /payutilities
+      // 5) ปิดโมดอล และส่งไปหน้า 
       onHide?.();
-      navigate("/payutilities", {
+      navigate("/utilitiesuser", {
         state: {
           paymentId: paymentRef.id,
           utilityId: utility.id,

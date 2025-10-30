@@ -1,11 +1,11 @@
 // src/components/Login.jsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, Col, Container, Form, InputGroup, Row, Alert } from 'react-bootstrap';
-import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider } from '../service/Firebase';
+import { signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider, db } from '../service/Firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
-import LogoutButton from '../componnets/LogoutButton';
 import NavbarComponent from '../componnets/Navbar';
 
 function mapFirebaseError(code) {
@@ -31,16 +31,8 @@ export default function Login() {
   const location = useLocation();
   const { user } = useAuth();
 
-  // path ที่มาจาก ProtectedRoute (ถ้ามี)
   const from = location.state?.from?.pathname;
 
-  // ใช้ redirectTo เฉพาะกรณี email/password เท่านั้น
-  const redirectTo = useMemo(
-    () => from || '/lots',
-    [from]
-  );
-
-  // ถ้ามี user อยู่แล้ว ให้ redirect กลับไปยัง 'from' เท่านั้น (กันการทับ /home ของ Google)
   useEffect(() => {
     if (user && from) {
       navigate(from, { replace: true });
@@ -51,12 +43,43 @@ export default function Login() {
     e.preventDefault();
     setSubmitting(true);
     setError('');
+
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      // อีเมล/พาสเวิร์ด: ไปยัง redirectTo (from หรือ /AdminDashboard)
-      navigate(redirectTo, { replace: true });
+      // ✅ ตรวจสอบใน Firestore collection "admin" ตามที่มีอยู่
+      const q = query(
+        collection(db, 'admin'),
+        where('email', '==', email.trim()),
+        where('pass', '==', password)
+      );
+      const snapshot = await getDocs(q);
+
+      if (snapshot.empty) {
+        setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+        return;
+      }
+
+      const docData = snapshot.docs[0].data();
+      const role = docData.role || 'admin'; // fallback เป็น admin ถ้าไม่ได้เซ็ต
+
+      // ✅ เก็บข้อมูลผู้ใช้ลง sessionStorage เพื่อให้ Sidebar ดึงไปแสดง
+      const adminPayload = {
+        email: email.trim(),
+        role,
+        displayName: docData.displayName || docData.name || '',
+        provider: 'password',
+        loggedInAt: new Date().toISOString(),
+      };
+      sessionStorage.setItem('adminUser', JSON.stringify(adminPayload));
+
+      // ✅ นำทางตามบทบาท
+      if (role === 'admin') {
+        navigate('/lots', { replace: true });
+      } else {
+        navigate('/home', { replace: true });
+      }
     } catch (err) {
-      setError(mapFirebaseError(err.code));
+      console.error(err);
+      setError('เกิดข้อผิดพลาด ไม่สามารถเข้าสู่ระบบได้');
     } finally {
       setSubmitting(false);
     }
@@ -66,9 +89,34 @@ export default function Login() {
     setSubmitting(true);
     setError('');
     try {
-      await signInWithPopup(auth, googleProvider);
-      // Google: บังคับไปหน้า /home ตามที่ต้องการ
-      navigate('/home', { replace: true });
+      const cred = await signInWithPopup(auth, googleProvider);
+      const u = cred.user;
+
+      // (ออปชัน) ตรวจสอบว่าเป็นแอดมินไหมจาก collection "admin"
+      let role = 'user';
+      try {
+        const q = query(collection(db, 'admin'), where('email', '==', u.email || ''));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          // ถ้ามีเอกสารใน admin ถือว่าเป็นแอดมิน
+          const adminDoc = snap.docs[0].data();
+          role = adminDoc.role || 'admin';
+        }
+      } catch {
+        // ถ้าตรวจสอบ role ไม่ได้ ให้เป็น 'user' ไปก่อน
+      }
+
+      // ✅ เก็บลง sessionStorage เช่นกัน
+      const payload = {
+        email: u.email || '',
+        role,
+        displayName: u.displayName || '',
+        provider: 'google',
+        loggedInAt: new Date().toISOString(),
+      };
+      sessionStorage.setItem('adminUser', JSON.stringify(payload));
+
+      navigate(role === 'admin' ? '/lots' : '/home', { replace: true });
     } catch (err) {
       setError(mapFirebaseError(err.code));
     } finally {
@@ -133,6 +181,7 @@ export default function Login() {
                       onClick={handleGoogleLogin}
                       disabled={submitting}
                       className="rounded-3"
+                      type="button"
                     >
                       ลงชื่อเข้าใช้ด้วย Google
                     </Button>
@@ -141,17 +190,11 @@ export default function Login() {
 
                 <div className="text-center mt-3">
                   <small className="text-muted">
-                    ยังไม่มีบัญชี? <Link to="/register">สมัครสมาชิก</Link>
+                    ลืมรหัสผ่าน? <Link to="#">ติดต่อผู้ดูแลระบบ</Link>
                   </small>
                 </div>
               </Card.Body>
             </Card>
-
-            {user && (
-              <div className="mt-3">
-                <LogoutButton className="w-100 rounded-3" size="lg" />
-              </div>
-            )}
           </Col>
         </Row>
       </Container>

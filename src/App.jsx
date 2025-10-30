@@ -21,13 +21,18 @@ import AdminUtilitiesPage from "./page/AdminUtilitiesPage";
 import UtilitiesUserPage from "./page/UtilitiesUserPage";
 import PayUtilities from "./page/PayUtilities";
 import ExpenseSummaryPage from "./page/ExpenseSummaryPage";
+import UtilityPayPage from "./page/UtilityPayPage";
+import AdminUsersPage from "./page/AdminUsersPage";
+import UtilitiesPaymentsAdmin from "./page/UtilitiesPaymentsAdmin";
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
         {/* หน้า public */}
-         <Route path="/ExpenseSummaryPage" element={<ExpenseSummaryPage />} />
-         <Route path="/utility-pay/:id" element={<UtilityPayStandalone />} />
+         <Route path="/UtilitiesPaymentsAdmin" element={<UtilitiesPaymentsAdmin/>} />
+        <Route path="/AdminUsersPage" element={<AdminUsersPage />} />
+        <Route path="/ExpenseSummaryPage" element={<ExpenseSummaryPage />} />
+        <Route path="/utility-pay/:id" element={<UtilityPayPage/>} />
         <Route path="/payutilities" element={<PayUtilities />} />
         <Route path="/utilitiesuser" element={<UtilitiesUserPage  />} />
         <Route path="/utilities" element={<AdminUtilitiesPage />} />
@@ -44,6 +49,7 @@ export default function App() {
         <Route path="/payments/:id" element={<PaymentPage />} />
         {/* หน้า private (ต้องล็อกอินก่อน) */}
       </Routes>
+   
     </AuthProvider>
   );
 }
