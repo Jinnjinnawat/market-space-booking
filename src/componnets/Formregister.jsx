@@ -5,19 +5,16 @@ import Form from "react-bootstrap/Form";
 import Row from "react-bootstrap/Row";
 import Alert from "react-bootstrap/Alert";
 
-export default function FromRegister({ selectedLot, onClose }) {
+export default function FromRegister({ selectedLot, onClose, onSave }) {
   const [form, setForm] = useState({
-    name: "",
+    firstName: "",
     lastName: "",
     phone: "",
+    email: "",
     address: "",
-    city: "",
-    state: "",
-    zip: "",
     agree: false,
   });
-
-  const [showAlert, setShowAlert] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -26,133 +23,117 @@ export default function FromRegister({ selectedLot, onClose }) {
 
   const onSubmit = (e) => {
     e.preventDefault();
-    console.log("Rent request:", { lot: selectedLot, ...form });
 
-    // แสดง alert เมื่อส่งสำเร็จ
-    setShowAlert(true);
+    // ✅ ตรวจสอบว่ากรอกครบ
+    if (!form.firstName || !form.lastName || !form.phone || !form.email || !form.address)
+      return alert("กรุณากรอกข้อมูลให้ครบทุกช่อง");
 
-    // ปิด alert อัตโนมัติหลัง 3 วินาที และปิด modal
-    setTimeout(() => {
-      setShowAlert(false);
-      onClose?.();
-    }, 3000);
+    // ✅ ส่งข้อมูลกลับไปให้ parent (Home)
+    onSave?.({
+      name: `${form.firstName} ${form.lastName}`,
+      phone: form.phone,
+      email: form.email,
+      address: form.address,
+    });
+
+    setSubmitted(true);
+    // รีเซ็ตฟอร์ม
+    setForm({
+      firstName: "",
+      lastName: "",
+      phone: "",
+      email: "",
+      address: "",
+      agree: false,
+    });
   };
 
   return (
-    <>
-      {showAlert && (
-        <Alert
-          show={showAlert}
-          variant="success"
-          onClose={() => setShowAlert(false)}
-          dismissible
-          className="mt-3"
-        >
-          <Alert.Heading>ลงทะเบียนเช่าสำเร็จ!</Alert.Heading>
-          <p>ระบบได้รับคำขอของคุณเรียบร้อยแล้ว เราจะติดต่อกลับโดยเร็วที่สุด</p>
+    <Form onSubmit={onSubmit}>
+      {submitted && (
+        <Alert variant="success" className="mb-3">
+          ✅ บันทึกข้อมูลเรียบร้อย! ขอบคุณที่เข้าร่วมประมูล
         </Alert>
       )}
 
-      <Form onSubmit={onSubmit} className="mt-3">
-        <h4 className="mb-3">
-          ฟอร์มลงทะเบียนเช่าพื้นที่ {selectedLot ? `(${selectedLot.name})` : ""}
-        </h4>
-
-        <Row className="mb-3">
-          <Form.Group as={Col} controlId="formName">
+      <Row className="g-3">
+        <Col md={6}>
+          <Form.Group>
             <Form.Label>ชื่อ</Form.Label>
             <Form.Control
-              placeholder="ชื่อ"
-              name="name"
-              value={form.name}
+              name="firstName"
+              value={form.firstName}
               onChange={onChange}
               required
             />
           </Form.Group>
+        </Col>
 
-          <Form.Group as={Col} controlId="formLastName">
+        <Col md={6}>
+          <Form.Group>
             <Form.Label>นามสกุล</Form.Label>
             <Form.Control
-              placeholder="นามสกุล"
               name="lastName"
               value={form.lastName}
               onChange={onChange}
               required
             />
           </Form.Group>
+        </Col>
 
-          <Form.Group as={Col} controlId="formPhone">
+        <Col md={6}>
+          <Form.Group>
             <Form.Label>เบอร์โทรศัพท์</Form.Label>
             <Form.Control
-              placeholder="เบอร์โทรศัพท์"
               name="phone"
               value={form.phone}
               onChange={onChange}
+              placeholder="เช่น 0812345678"
               required
             />
           </Form.Group>
-        </Row>
+        </Col>
 
-        <Form.Group className="mb-3" controlId="formGridAddress1">
-          <Form.Label>ที่อยู่</Form.Label>
-          <Form.Control
-            placeholder="1234 Main St"
-            name="address"
-            value={form.address}
-            onChange={onChange}
-            required
-          />
-        </Form.Group>
-
-        <Row className="mb-3">
-          <Form.Group as={Col} controlId="formGridCity">
-            <Form.Label>อำเภอ/เขต</Form.Label>
-            <Form.Control name="city" value={form.city} onChange={onChange} />
-          </Form.Group>
-
-          <Form.Group as={Col} controlId="formGridState">
-            <Form.Label>จังหวัด</Form.Label>
-            <Form.Select
-              defaultValue=""
-              name="state"
-              value={form.state}
+        <Col md={6}>
+          <Form.Group>
+            <Form.Label>อีเมล</Form.Label>
+            <Form.Control
+              type="email"
+              name="email"
+              value={form.email}
               onChange={onChange}
-            >
-              <option value="">เลือกจังหวัด...</option>
-              <option>กรุงเทพมหานคร</option>
-              <option>เชียงใหม่</option>
-              <option>ขอนแก่น</option>
-              <option>ภูเก็ต</option>
-              <option>...</option>
-            </Form.Select>
+              placeholder="example@email.com"
+              required
+            />
           </Form.Group>
+        </Col>
 
-          <Form.Group as={Col} controlId="formGridZip">
-            <Form.Label>รหัสไปรษณีย์</Form.Label>
-            <Form.Control name="zip" value={form.zip} onChange={onChange} />
+        <Col xs={12}>
+          <Form.Group>
+            <Form.Label>ที่อยู่</Form.Label>
+            <Form.Control
+              as="textarea"
+              rows={2}
+              name="address"
+              value={form.address}
+              onChange={onChange}
+              placeholder="ระบุบ้านเลขที่ หมู่ ถนน แขวง/ตำบล เขต/อำเภอ จังหวัด"
+              required
+            />
           </Form.Group>
-        </Row>
+        </Col>
 
-        <Form.Group className="mb-3" id="formGridCheckbox">
-          <Form.Check
-            type="checkbox"
-            label="ยอมรับเงื่อนไขการเช่า"
-            name="agree"
-            checked={form.agree}
-            onChange={onChange}
-            required
-          />
-        </Form.Group>
+        
 
-        <div className="d-flex gap-2 justify-content-end">
-          <Button variant="outline-secondary" onClick={onClose}>
-            ยกเลิก
+        <Col xs={12} className="d-flex justify-content-end gap-2">
+          <Button variant="outline-secondary" onClick={onClose} type="button">
+            ปิด
           </Button>
           <Button variant="success" type="submit">
-            เช่าพื้นที่
+            บันทึกข้อมูล
           </Button>
-        </div>
-      </Form>
-    </>
+        </Col>
+      </Row>
+    </Form>
   );
 }
