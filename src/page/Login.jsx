@@ -45,7 +45,6 @@ export default function Login() {
     setError('');
 
     try {
-      // ✅ ตรวจสอบใน Firestore collection "admin" ตามที่มีอยู่
       const q = query(
         collection(db, 'admin'),
         where('email', '==', email.trim()),
@@ -59,9 +58,8 @@ export default function Login() {
       }
 
       const docData = snapshot.docs[0].data();
-      const role = docData.role || 'admin'; // fallback เป็น admin ถ้าไม่ได้เซ็ต
+      const role = docData.role || 'admin';
 
-      // ✅ เก็บข้อมูลผู้ใช้ลง sessionStorage เพื่อให้ Sidebar ดึงไปแสดง
       const adminPayload = {
         email: email.trim(),
         role,
@@ -71,7 +69,6 @@ export default function Login() {
       };
       sessionStorage.setItem('adminUser', JSON.stringify(adminPayload));
 
-      // ✅ นำทางตามบทบาท
       if (role === 'admin') {
         navigate('/lots', { replace: true });
       } else {
@@ -92,21 +89,18 @@ export default function Login() {
       const cred = await signInWithPopup(auth, googleProvider);
       const u = cred.user;
 
-      // (ออปชัน) ตรวจสอบว่าเป็นแอดมินไหมจาก collection "admin"
       let role = 'user';
       try {
         const q = query(collection(db, 'admin'), where('email', '==', u.email || ''));
         const snap = await getDocs(q);
         if (!snap.empty) {
-          // ถ้ามีเอกสารใน admin ถือว่าเป็นแอดมิน
           const adminDoc = snap.docs[0].data();
           role = adminDoc.role || 'admin';
         }
       } catch {
-        // ถ้าตรวจสอบ role ไม่ได้ ให้เป็น 'user' ไปก่อน
+        // ignore
       }
 
-      // ✅ เก็บลง sessionStorage เช่นกัน
       const payload = {
         email: u.email || '',
         role,
@@ -138,6 +132,13 @@ export default function Login() {
                 </div>
 
                 {error && <Alert variant="danger" className="rounded-3">{error}</Alert>}
+
+                {/* ✅ คำอธิบายสำหรับผู้ดูแล */}
+                <div className="text-center mb-2">
+                  <small className=" fw-semibold">
+                    สำหรับผู้ดูแลระบบ
+                  </small>
+                </div>
 
                 <Form onSubmit={handleEmailLogin}>
                   <Form.Group className="mb-3" controlId="email">
@@ -176,17 +177,27 @@ export default function Login() {
                     <Button type="submit" disabled={submitting} className="rounded-3" size="lg">
                       {submitting ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
                     </Button>
-                    <Button
-                      variant="outline-dark"
-                      onClick={handleGoogleLogin}
-                      disabled={submitting}
-                      className="rounded-3"
-                      type="button"
-                    >
-                      ลงชื่อเข้าใช้ด้วย Google
-                    </Button>
                   </div>
                 </Form>
+
+                {/* ✅ คำอธิบายสำหรับผู้เช่า */}
+                <div className="text-center mt-4 mb-2">
+                  <small className=" fw-semibold">
+                    สำหรับผู้เช่า
+                  </small>
+                </div>
+
+                <div className="d-grid gap-2">
+                  <Button
+                    variant="outline-dark"
+                    onClick={handleGoogleLogin}
+                    disabled={submitting}
+                    className="rounded-3"
+                    type="button"
+                  >
+                    ลงชื่อเข้าใช้ด้วย Google
+                  </Button>
+                </div>
 
                 <div className="text-center mt-3">
                   <small className="text-muted">
