@@ -62,6 +62,9 @@ export default function Home() {
   const [showDetails, setShowDetails] = useState(false);
   const [selectedLot, setSelectedLot] = useState(null);
 
+  // ✅ NEW: state สำหรับแจ้งเตือนให้ล็อกอินก่อน
+  const [showLoginAlert, setShowLoginAlert] = useState(false);
+
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth(); // ✅ user จาก Auth
 
@@ -90,7 +93,6 @@ export default function Home() {
       );
 
       const unsubBookings = onSnapshot(
-        // ถ้า collection มีเอกสารที่ไม่มีฟิลด์ from อาจต้องเปลี่ยนเป็น orderBy("createdAt","desc")
         query(collection(db, "bookings"), orderBy("from", "desc")),
         (snap) => {
           const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -170,33 +172,30 @@ export default function Home() {
 
   // ---------- create booking: attach current user info ----------
   const addBooking = async (lot, renter) => {
-    if (lot?.isPaid) {
-      setErr("ล็อตนี้ถูกชำระแล้ว ไม่สามารถลงทะเบียน/เช่าต่อได้");
+    // ✅ ถ้ายังไม่ล็อกอินให้เด้ง Modal แจ้งเตือนก่อน
+    if (!user) {
+      setShowLoginAlert(true);
       return;
     }
-    if (!user) {
-      // ยังไม่ล็อกอิน → ส่งไปหน้า login พร้อม state กลับหน้าเดิม
-      navigate("/login", { replace: true, state: { from: { pathname: "/home" } } });
+
+    if (lot?.isPaid) {
+      setErr("ล็อตนี้ถูกชำระแล้ว ไม่สามารถลงทะเบียน/เช่าต่อได้");
       return;
     }
 
     try {
       await addDoc(collection(db, "bookings"), {
-        // เชื่อมกับล็อต
         lotId: lot.id,
         lotName: lot.name || lot.lotNo || lot.lot || "",
         pricePerMonth: Number(lot.pricePerMonth ?? 0),
         deposit: Number(lot.deposit ?? 0),
 
-        // ข้อมูลผู้เช่าในฟอร์ม
         name: renter.name || user.displayName || "",
         phone: renter.phone || "",
 
-        // ช่วงเวลาเช่าถ้ามี (ระบบนี้ลบการคำนวณรวมออกแล้ว แต่เผื่อเก็บโครง)
         from: renter.from || null,
         to: renter.to || null,
 
-        // สถานะเริ่มต้น
         status: "pending",
 
         // ✅ แนบข้อมูลผู้ใช้จากการล็อกอิน
@@ -212,7 +211,6 @@ export default function Home() {
           at: serverTimestamp(),
         },
 
-        // ตราประทับเวลา
         createdAt: serverTimestamp(),
       });
     } catch (e) {
@@ -227,9 +225,10 @@ export default function Home() {
       setErr("ล็อตนี้ถูกชำระแล้ว ไม่สามารถลงทะเบียน/เช่าต่อได้");
       return;
     }
-    // ถ้ายังไม่ล็อกอิน ให้พาไปหน้า login ก่อน
+    // ✅ ถ้ายังไม่ล็อกอิน → แสดง Modal แจ้งเตือน (ไม่ redirect ทันที)
     if (!user && !authLoading) {
-      navigate("/login", { replace: true, state: { from: { pathname: "/home" } } });
+      setSelectedLot(lot);
+      setShowLoginAlert(true);
       return;
     }
     setSelectedLot(lot);
@@ -257,8 +256,9 @@ export default function Home() {
       setErr("ล็อตนี้ถูกชำระแล้ว ไม่สามารถลงทะเบียน/เช่าต่อได้");
       return;
     }
+    // ✅ ถ้ายังไม่ล็อกอิน → แสดง Modal แจ้งเตือน
     if (!user && !authLoading) {
-      navigate("/login", { replace: true, state: { from: { pathname: "/home" } } });
+      setShowLoginAlert(true);
       return;
     }
     setShowDetails(false);
@@ -441,6 +441,38 @@ export default function Home() {
             }}
           />
         </Modal.Body>
+      </Modal>
+
+      {/* ✅ NEW: Modal แจ้งเตือนให้ล็อกอินก่อน */}
+      <Modal
+        show={showLoginAlert}
+        onHide={() => setShowLoginAlert(false)}
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>ต้องเข้าสู่ระบบก่อน</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Alert variant="warning" className="mb-0">
+            กรุณาเข้าสู่ระบบก่อนดำเนินการเช่าพื้นที่
+          </Alert>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="outline-secondary" onClick={() => setShowLoginAlert(false)}>
+            ปิด
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() =>
+              navigate("/login", {
+                replace: true,
+                state: { from: { pathname: "/home" } }, // ถ้าหน้าหลักคือ "/" เปลี่ยนเป็น pathname: "/"
+              })
+            }
+          >
+            ไปหน้าเข้าสู่ระบบ
+          </Button>
+        </Modal.Footer>
       </Modal>
 
       <Footer />
